@@ -86,10 +86,16 @@ window.crearClienteSupabase = function (cfg) {
         return { ok: false, mensaje: `PIN incorrecto. Quedan ${data.restantes} intentos` };
       },
 
+      async contarPasskeys() {
+        try { const r = await sb.auth.passkey.list(); return r && r.data ? r.data.length : null; } catch (e) { return null; }
+      },
+
       async registrarPasskey() {
         if (estado !== 'dentro') return { ok: false, mensaje: 'Primero entra' };
-        const { error: e } = await sb.auth.registerPasskey();
-        return e ? error(e, 'No se pudo registrar') : { ok: true };
+        try {
+          const { error: e } = await sb.auth.registerPasskey();
+          return e ? error(e, 'No se pudo registrar') : { ok: true };
+        } catch (e) { return error(e, 'No se pudo registrar'); }
       },
 
       async fijarPin(pin) {
@@ -113,7 +119,7 @@ window.crearClienteSupabase = function (cfg) {
   if (typeof module !== 'undefined') module.exports = { crearAcceso }; else raiz.crearAcceso = crearAcceso;
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
-<script>window.PANTALLA_APP = '<h2>Obra</h2><p>Módulos en construcción.</p><div class="acceso"><button id="btnRegHuella" class="principal">Registrar huella / Face ID</button><input id="pinNuevo" inputmode="numeric" maxlength="6" placeholder="PIN nuevo de 6 dígitos" autocomplete="off"><button id="btnFijarPin">Guardar PIN</button><p id="msgApp" role="status"></p><button id="btnSalir" class="ligero">Salir</button></div>';</script>
+<script>window.PANTALLA_APP = '<h2>Obra</h2><p>Módulos en construcción.</p><div class="acceso"><button id="btnRegHuella" class="principal">Registrar huella / Face ID</button><input id="pinNuevo" inputmode="numeric" maxlength="6" placeholder="PIN nuevo de 6 dígitos" autocomplete="off"><button id="btnFijarPin">Guardar PIN</button><p id="huellas"></p><p id="msgApp" role="status"></p><button id="btnSalir" class="ligero">Salir</button></div>';</script>
 </head><body data-version="0.1.0">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas -->
 <section id="acceso" class="acceso">
@@ -144,8 +150,12 @@ window.crearClienteSupabase = function (cfg) {
     document.querySelectorAll('[data-vista]').forEach((d) => { d.hidden = d.dataset.vista !== e; });
     $('acceso').hidden = e === 'dentro';
     const app = $('app');
-    if (e === 'dentro') { app.innerHTML = window.PANTALLA_APP || ''; app.hidden = false; }
+    if (e === 'dentro') { app.innerHTML = window.PANTALLA_APP || ''; app.hidden = false; mostrarHuellas(); }
     else { app.innerHTML = ''; app.hidden = true; } // nada de la app existe sin login
+  }
+  async function mostrarHuellas() {
+    const n = await a.contarPasskeys(), el = $('huellas');
+    if (el) el.textContent = n === null ? 'Huellas registradas: no se pudo consultar' : 'Huellas registradas: ' + n;
   }
   a.alCambiar(pintar);
   const r = (p) => p.then((x) => msg(x.ok ? (x.mensaje || '') : x.mensaje));
@@ -156,7 +166,7 @@ window.crearClienteSupabase = function (cfg) {
   // Botones dentro de la app (configurar huella y PIN)
   $('app').addEventListener('click', async (ev) => {
     const id = ev.target.id, m = (t) => { $('msgApp').textContent = t; };
-    if (id === 'btnRegHuella') { const x = await a.registrarPasskey(); m(x.ok ? 'Huella registrada' : x.mensaje); }
+    if (id === 'btnRegHuella') { m('Esperando huella…'); const x = await a.registrarPasskey(); m(x.ok ? 'Huella registrada' : 'Error: ' + x.mensaje); mostrarHuellas(); }
     if (id === 'btnFijarPin') { const x = await a.fijarPin($('pinNuevo').value); $('pinNuevo').value = ''; m(x.ok ? 'PIN guardado' : x.mensaje); }
     if (id === 'btnSalir') a.salir();
   });
