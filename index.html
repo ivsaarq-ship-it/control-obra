@@ -1283,6 +1283,37 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
+<script>// id: reporte.aviso_celular · tipo: servicio_externo · módulo: reporte · deps: core.configuracion, core.instalable, reporte.aviso_lunes
+// Activa en este celular el aviso del lunes (Web Push gratis). Guarda el "buzón" del celular en push_suscripciones.
+(function (raiz) {
+  const FUNC = () => raiz.CONFIG.supabaseUrl + '/functions/v1/resumen-lunes';
+  const aBytes = (b64) => { const s = atob(b64.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((b64.length + 3) % 4)); return Uint8Array.from(s, (c) => c.charCodeAt(0)); };
+  const llamar = async (accion, extra) => {
+    const r = await fetch(FUNC(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ accion }, extra)) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'el servidor respondió ' + r.status);
+    return j;
+  };
+  const AVISO = {
+    disponible: () => 'serviceWorker' in navigator && 'PushManager' in raiz && 'Notification' in raiz,
+    async suscripcion() { const reg = await navigator.serviceWorker.getRegistration(); return reg ? reg.pushManager.getSubscription() : null; },
+    async activo() { return AVISO.disponible() && Notification.permission === 'granted' && !!(await AVISO.suscripcion()); },
+    async activar(datos) {
+      if (!AVISO.disponible()) throw new Error('este celular no acepta avisos (en iPhone: primero instala la app en la pantalla de inicio)');
+      if ((await Notification.requestPermission()) !== 'granted') throw new Error('no diste permiso de notificaciones');
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) { const { publica } = await llamar('clave'); sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: aBytes(publica) }); }
+      const j = sub.toJSON(), ya = await datos.listar('push_suscripciones', { endpoint: j.endpoint });
+      if (!ya.length) await datos.crear('push_suscripciones', { endpoint: j.endpoint, p256dh: (j.keys || {}).p256dh, auth: (j.keys || {}).auth, nota: navigator.userAgent.slice(0, 120) });
+      return true;
+    },
+    // Solo avisa a ESTE celular (el servidor exige un buzón ya registrado).
+    async probar() { const sub = await AVISO.suscripcion(); if (!sub) throw new Error('primero activa el aviso'); return llamar('prueba', { endpoint: sub.endpoint }); },
+  };
+  raiz.AVISO = AVISO;
+})(window);
+</script>
 <script>// id: fotos.clasificar · tipo: regla_calculo · módulo: fotos · deps: ninguna
 // Lee el texto de la foto (sacado en el teléfono) y decide: ticket de compra o avance de obra.
 // Si es ticket, sugiere monto total, fecha, proveedor y RFC. El usuario siempre confirma.
@@ -1535,7 +1566,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-<script>// id: ajustes.pantalla · tipo: pantalla · módulo: ajustes · deps: acceso.reglas, obra.pantalla, core.respaldo
+<script>// id: ajustes.pantalla · tipo: pantalla · módulo: ajustes · deps: acceso.reglas, obra.pantalla, core.respaldo, reporte.aviso_celular
 (function (raiz) {
   const { h } = raiz.UI;
   const botonRespaldo = (ctx, clase) => h('button', { class: clase || 'btn', onclick: async (e) => {
@@ -1560,6 +1591,13 @@ window.crearClienteSupabase = function (cfg) {
       raiz.RESPALDO ? h('div', { class: 'c form' }, h('div', { class: 'mu', id: 'estadoRespaldo' }, raiz.RESPALDO.ultimo() ? 'Último respaldo: ' + new Date(raiz.RESPALDO.ultimo()).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Aún sin respaldo'),
         h('div', { class: 'mu' }, 'Copia de todos tus datos en tu Drive, carpeta "Control de obra - respaldos". Se hace sola cada semana.'),
         botonRespaldo(ctx)) : null,
+      h('div', { class: 'cap' }, 'Aviso del lunes'),
+      raiz.AVISO ? h('div', { class: 'c form' },
+        h('div', { class: 'mu', id: 'estadoAviso' }, (await raiz.AVISO.activo().catch(() => false)) ? '✅ Activo en este celular: cada lunes 8 am te llega "Resumen de la semana listo".' : 'Cada lunes 8 am te llega un aviso al celular con el resumen de la semana.'),
+        h('button', { class: 'btn', id: 'btnAviso', onclick: async (e) => { const b = e.currentTarget; b.disabled = true;
+          try { await raiz.AVISO.activar(ctx.datos); ctx.aviso('Aviso del lunes activado'); ctx.recargar(); } catch (err) { ctx.aviso('No se pudo activar: ' + err.message); b.disabled = false; } } }, 'Activar aviso del lunes'),
+        h('button', { class: 'btn lig', id: 'btnProbarAviso', onclick: async (e) => { const b = e.currentTarget; b.disabled = true;
+          try { await raiz.AVISO.probar(); ctx.aviso('Aviso enviado: debe llegarte en segundos'); } catch (err) { ctx.aviso('No se pudo: ' + err.message); } b.disabled = false; } }, 'Probar aviso')) : null,
       h('div', { class: 'cap' }, 'Seguridad'),
       h('div', { class: 'c form' }, h('p', { id: 'huellas', class: 'mu', style: 'margin:0' }),
         h('button', { id: 'btnRegHuella', class: 'btn' }, 'Registrar huella / Face ID'),
@@ -1569,7 +1607,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="1.0.0-20261127200546">
+</head><body data-version="1.1.0-20261127201455">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <section id="acceso">
   <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
