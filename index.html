@@ -51,7 +51,12 @@ window.crearClienteSupabase = function (cfg) {
         const vieneDeEnlace = /access_token=|[?&]code=/.test(urlActual || '');
         const { data } = await sb.auth.getSession();
         const haySesion = !!(data && data.session);
-        poner(haySesion ? (vieneDeEnlace ? 'dentro' : 'bloqueada') : 'fuera'); // al abrir con sesión guardada pide passkey o PIN
+        let conQueDesbloquear = true;
+        if (haySesion && !vieneDeEnlace && sb.auth.passkey && sb.auth.passkey.list) {
+          // Sin huella registrada no hay con qué desbloquear: entra para que pueda configurarla.
+          try { const r = await sb.auth.passkey.list(); conQueDesbloquear = !!(r && r.data && r.data.length); } catch (e) { conQueDesbloquear = true; }
+        }
+        poner(haySesion ? (vieneDeEnlace || !conQueDesbloquear ? 'dentro' : 'bloqueada') : 'fuera'); // con sesión guardada pide huella o PIN
         sb.auth.onAuthStateChange((ev, ses) => { if (!ses) poner('fuera'); });
         return estado;
       },
