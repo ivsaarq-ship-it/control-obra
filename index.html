@@ -59,6 +59,8 @@ button { cursor:pointer; }
 .nav svg { width:22px; height:22px; }
 .menu-fab { position:fixed; right:max(18px, calc(50% - 262px)); bottom:150px; display:grid; gap:8px; z-index:5; }
 .menu-fab button { background:var(--oscuro); color:#fff; border:0; border-radius:12px; padding:14px 18px; font-weight:600; text-align:left; font-size:15px; }
+.red { background:#fff3d6; color:#6b4a00; font-size:13px; font-weight:600; padding:8px 16px; text-align:center; }
+.red.off { background:#3a3f47; color:#fff; }
 .capa-voz { position:fixed; inset:0; background:#0007; display:flex; align-items:flex-end; justify-content:center; padding:16px; z-index:20; }
 .capa-voz > .c { width:100%; max-width:520px; }
 .fila-fab { display:flex; gap:6px; justify-content:flex-end; }
@@ -94,8 +96,15 @@ window.crearClienteSupabase = function (cfg) {
 //          'bloqueada' (hay sesión pero la app se bloqueó) → passkey o PIN.
 //          'dentro' → se ve la app. Ninguna pantalla sin 'dentro'.
 (function (raiz) {
+  const esFallaDeRed = (e) => (typeof navigator !== 'undefined' && navigator.onLine === false) || /failed to fetch|network|load failed|fetch|timeout|conexi/i.test(String((e && e.message) || e));
+  // Pide la huella/Face ID del teléfono con la passkey ya registrada (no necesita internet).
+  async function huellaLocal() {
+    if (!(raiz.navigator && raiz.navigator.credentials && raiz.PublicKeyCredential)) return false;
+    const c = await raiz.navigator.credentials.get({ publicKey: { challenge: raiz.crypto.getRandomValues(new Uint8Array(32)), userVerification: 'required', timeout: 60000 } });
+    return !!c;
+  }
   function crearAcceso(sb, opciones) {
-    const o = Object.assign({ minutosBloqueo: 15, ahora: () => Date.now(), almacen: (() => { try { return raiz.localStorage; } catch (e) { return null; } })() }, opciones || {});
+    const o = Object.assign({ minutosBloqueo: 15, ahora: () => Date.now(), verificarLocal: huellaLocal, almacen: (() => { try { return raiz.localStorage; } catch (e) { return null; } })() }, opciones || {});
     const CLAVE = 'ultimoUso';
     const leerUso = () => { try { return Number(o.almacen && o.almacen.getItem(CLAVE)) || 0; } catch (e) { return 0; } };
     const guardarUso = (t) => { try { if (o.almacen) { if (t) o.almacen.setItem(CLAVE, String(t)); else o.almacen.removeItem(CLAVE); } } catch (e) { /* sin almacenamiento */ } };
@@ -129,7 +138,13 @@ window.crearClienteSupabase = function (cfg) {
       },
 
       async entrarConPasskey() {
-        const { data, error: e } = await sb.auth.signInWithPasskey();
+        let res; try { res = await sb.auth.signInWithPasskey(); } catch (x) { res = { error: x }; }
+        const { data, error: e } = res || {};
+        // Sin señal y con la sesión ya guardada: basta la huella del teléfono para quitar el bloqueo de pantalla.
+        if (e && estado === 'bloqueada' && esFallaDeRed(e)) {
+          try { if (await o.verificarLocal()) { metodo = 'huella (sin señal)'; poner('dentro'); return { ok: true }; } } catch (x) { /* canceló */ }
+          return { ok: false, mensaje: 'Sin señal: no se pudo verificar la huella' };
+        }
         if (e || !data || !data.session) return error(e, 'No se pudo entrar con huella/Face ID');
         metodo = 'huella'; poner('dentro'); return { ok: true };
       },
@@ -265,22 +280,118 @@ window.crearClienteSupabase = function (cfg) {
   raiz.UI.grua = () => { const t = document.createElement('template'); t.innerHTML = SVG.trim(); return t.content.firstChild; };
 })(window);
 </script>
-<script>// id: core.datos · tipo: proceso_base · módulo: core · deps: acceso.servicio
-// Única puerta a la base de datos. Todo pasa por aquí (fácil de probar y de cambiar).
+<script>// id: core.local · tipo: servicio_externo · módulo: core · deps: ninguna
+// Almacén del teléfono (IndexedDB): fotos por subir, miniaturas, copia de datos para trabajar sin señal y cola de cambios.
+// Ojo: si se borran los datos de la app en el teléfono, lo que no se haya subido se pierde.
 (function (raiz) {
-  function crearDatos(sb) {
+  const TABLAS = [['fotos', 'id'], ['miniaturas', 'drive_id'], ['espejo', 'k'], ['cola', 'n', true], ['fallidos', 'n', true]];
+  let bd = null;
+  const abrir = () => bd || (bd = new Promise((ok, mal) => {
+    const r = indexedDB.open('control-obra', 3);
+    r.onupgradeneeded = () => { const db = r.result; for (const [t, k, auto] of TABLAS) if (!db.objectStoreNames.contains(t)) db.createObjectStore(t, { keyPath: k, autoIncrement: !!auto }); };
+    r.onsuccess = () => ok(r.result); r.onerror = () => { bd = null; mal(r.error); };
+  }));
+  const op = async (t, modo, f) => { const db = await abrir(); return new Promise((ok, mal) => { const tx = db.transaction(t, modo), q = f(tx.objectStore(t)); tx.oncomplete = () => ok(q && q.result); tx.onerror = () => mal(tx.error); }); };
+  raiz.LOCAL = {
+    leer: (t, k) => op(t, 'readonly', (s) => s.get(k)),
+    poner: (t, v) => op(t, 'readwrite', (s) => s.put(v)),
+    todos: (t) => op(t, 'readonly', (s) => s.getAll()).then((x) => x || []),
+    quitar: (t, k) => op(t, 'readwrite', (s) => s.delete(k)),
+  };
+})(window);
+</script>
+<script>// id: core.datos · tipo: proceso_base · módulo: core · deps: acceso.servicio, core.local
+// Única puerta a la base de datos. Todo pasa por aquí (fácil de probar y de cambiar).
+// Sin señal: lee la última copia guardada en el teléfono y guarda los cambios en una cola que se sube sola al volver internet.
+(function (raiz) {
+  const nuevoId = () => (raiz.crypto && raiz.crypto.randomUUID ? raiz.crypto.randomUUID()
+    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = (Math.random() * 16) | 0; return (c === 'x' ? r : (r & 3) | 8).toString(16); }));
+  const esFallaDeRed = (e) => (typeof navigator !== 'undefined' && navigator.onLine === false) || /failed to fetch|network|load failed|fetch|timeout|conexi/i.test(String((e && e.message) || e));
+  const coincide = (fila, filtro) => Object.entries(filtro || {}).every(([k, v]) => (Array.isArray(v) ? v.includes(fila[k]) : fila[k] === v));
+
+  function crearDatos(sb, opciones) {
+    const L = (opciones && opciones.local) || raiz.LOCAL || null;
+    const estado = { sinSenal: false, pendientes: 0, subiendo: false, fallidos: [] }, escuchas = [];
+    const avisar = (c) => { Object.assign(estado, c); escuchas.forEach((f) => f(Object.assign({}, estado))); };
     const revisar = ({ data, error }) => { if (error) throw new Error(error.message || 'Error de base de datos'); return data; };
+    // Corre en línea; si falla la red devuelve null (y marca "sin señal"); otros errores sí truenan.
+    async function enLinea(f) {
+      try { const r = await f(); if (estado.sinSenal) avisar({ sinSenal: false }); return { r }; }
+      catch (e) { if (L && esFallaDeRed(e)) { avisar({ sinSenal: true }); return null; } throw e; }
+    }
+    const cola = async () => (L ? (await L.todos('cola')).sort((a, b) => a.n - b.n) : []);
+    async function encolar(c) { await L.poner('cola', c); avisar({ pendientes: (await cola()).length }); }
+
+    async function aplicar(c) {
+      if (c.op === 'crear') return revisar(await sb.from(c.tabla).upsert(c.fila, { onConflict: 'id' }).select().single());
+      if (c.op === 'cambiar') return revisar(await sb.from(c.tabla).update(c.cambios).eq('id', c.id).select().single());
+      return revisar(await sb.from(c.tabla).delete().eq('id', c.id));
+    }
+    // Sube la cola en orden. Se detiene si vuelve a faltar la red. Lo que el servidor rechace se aparta (no se pierde).
+    async function sincronizar() {
+      if (!L || estado.subiendo) return 0;
+      let xs = await cola(); if (!xs.length) { if (estado.pendientes) avisar({ pendientes: 0 }); return 0; }
+      avisar({ subiendo: true }); let subidos = 0;
+      try {
+        for (const c of xs) {
+          try { const x = await enLinea(() => aplicar(c)); if (!x) break; }
+          catch (e) { const { n, ...resto } = c; await L.poner('fallidos', Object.assign(resto, { error: e.message, fallo: new Date().toISOString() })); estado.fallidos.push(e.message); }
+          await L.quitar('cola', c.n); subidos++;
+        }
+      } finally { xs = await cola(); avisar({ subiendo: false, pendientes: xs.length }); }
+      return subidos;
+    }
+    // Antes de escribir: si hay cambios en espera, primero se suben (para respetar el orden).
+    if (L) cola().then((xs) => { if (xs.length) avisar({ pendientes: xs.length }); }).catch(() => {});
+    const libre = async () => { if (!L) return true; if ((await cola()).length) await sincronizar(); return !(await cola()).length; };
+
     return {
+      estado: () => Object.assign({}, estado),
+      alCambiar: (f) => escuchas.push(f),
+      sincronizar,
       async listar(tabla, filtro, orden) {
-        let q = sb.from(tabla).select('*');
-        for (const [k, v] of Object.entries(filtro || {})) q = Array.isArray(v) ? q.in(k, v) : q.eq(k, v);
-        for (const o of orden || []) q = q.order(o.replace(/^-/, ''), { ascending: !o.startsWith('-') });
-        return revisar(await q);
+        const k = JSON.stringify([tabla, filtro || {}, orden || []]);
+        if (L && estado.pendientes) await sincronizar();
+        const x = await enLinea(async () => {
+          let q = sb.from(tabla).select('*');
+          for (const [c, v] of Object.entries(filtro || {})) q = Array.isArray(v) ? q.in(c, v) : q.eq(c, v);
+          for (const o of orden || []) q = q.order(o.replace(/^-/, ''), { ascending: !o.startsWith('-') });
+          return revisar(await q);
+        });
+        if (x) { if (L) L.poner('espejo', { k, datos: x.r }).catch(() => {}); return x.r; }
+        // Sin señal: última copia + los cambios que están en espera.
+        const copia = await L.leer('espejo', k); let filas = copia ? copia.datos.map((f) => Object.assign({}, f)) : [];
+        for (const c of await cola()) {
+          if (c.tabla !== tabla) continue;
+          if (c.op === 'crear' && coincide(c.fila, filtro) && !filas.some((f) => f.id === c.fila.id)) filas.unshift(Object.assign({ creado: c.cuando }, c.vista || c.fila));
+          if (c.op === 'cambiar') filas.forEach((f) => { if (f.id === c.id) Object.assign(f, c.cambios); });
+          if (c.op === 'borrar') filas = filas.filter((f) => f.id !== c.id);
+        }
+        return filas;
       },
-      async crear(tabla, fila) { return revisar(await sb.from(tabla).insert(fila).select().single()); },
-      async cambiar(tabla, id, cambios) { return revisar(await sb.from(tabla).update(cambios).eq('id', id).select().single()); },
-      async borrar(tabla, id) { revisar(await sb.from(tabla).delete().eq('id', id)); },
-      async rpc(fn, args) { return revisar(await sb.rpc(fn, args)); },
+      async crear(tabla, fila) {
+        if (await libre()) { const x = await enLinea(async () => revisar(await sb.from(tabla).insert(fila).select().single())); if (x) return x.r; }
+        const f = Object.assign({}, fila, { id: fila.id || nuevoId() }), cuando = new Date().toISOString();
+        const vista = Object.assign({}, f); if (tabla === 'conceptos') vista.importe = Math.round(Number(f.cantidad || 0) * Number(f.precio_unitario || 0) * 100) / 100;
+        await encolar({ op: 'crear', tabla, fila: f, vista, cuando });
+        return Object.assign({ creado: cuando }, vista);
+      },
+      async cambiar(tabla, id, cambios) {
+        if (await libre()) { const x = await enLinea(async () => revisar(await sb.from(tabla).update(cambios).eq('id', id).select().single())); if (x) return x.r; }
+        await encolar({ op: 'cambiar', tabla, id, cambios, cuando: new Date().toISOString() });
+        return Object.assign({ id }, cambios);
+      },
+      async borrar(tabla, id) {
+        if (await libre()) { const x = await enLinea(async () => revisar(await sb.from(tabla).delete().eq('id', id))); if (x) return; }
+        await encolar({ op: 'borrar', tabla, id, cuando: new Date().toISOString() });
+      },
+      async rpc(fn, args) {
+        const k = 'rpc:' + JSON.stringify([fn, args || {}]);
+        const x = await enLinea(async () => revisar(await sb.rpc(fn, args)));
+        if (x) { if (L) L.poner('espejo', { k, datos: x.r }).catch(() => {}); return x.r; }
+        const c = await L.leer('espejo', k); if (c) return c.datos;
+        throw new Error('Sin señal: esta vista se verá al volver internet');
+      },
     };
   }
   if (typeof module !== 'undefined') module.exports = { crearDatos }; else raiz.crearDatos = crearDatos;
@@ -320,6 +431,7 @@ window.crearClienteSupabase = function (cfg) {
   function iniciarApp(cont, datos, opciones) {
     const ctx = { datos, obra: null, cache: {}, ir, recargar, aviso, acceso: opciones.acceso };
     let vista = 'inicio', params = {};
+    const red = h('div', { class: 'red', role: 'status', hidden: true });
     const top = h('header', { class: 'top' }), cuerpo = h('section', { class: 'cuerpo' }), grua = raiz.UI.grua ? raiz.UI.grua() : null;
     const nav = h('nav', { class: 'nav', 'aria-label': 'Menú' }, h('div', { class: 'nav-in' }, MENU.map(([id, txt, ic]) =>
       h('button', { 'data-ir': id, onclick: () => ir(id) }, icono(ic || id), txt))));
@@ -344,7 +456,7 @@ window.crearClienteSupabase = function (cfg) {
     };
     const menuFab = h('div', { class: 'menu-fab', hidden: true }, h('div', { class: 'fila-fab' }, h('button', { onclick: () => ctx.dictar() }, '🎤 Dictar gasto')), fila('avance', 'Foto obra'), fila('ticket', 'Foto ticket'));
     const fab = h('button', { class: 'fab', 'aria-label': 'Tomar foto', onclick: () => { menuFab.hidden = !menuFab.hidden; } }, '+');
-    cont.replaceChildren(h('div', { class: 'app' }, top, cuerpo), camara, galeria, menuFab, fab, nav);
+    cont.replaceChildren(h('div', { class: 'app' }, top, red, cuerpo), camara, galeria, menuFab, fab, nav);
 
     // Lo que cambia poco se guarda en memoria y se refresca al guardar algo.
     ctx.conceptos = async () => (ctx.cache.conceptos ||= await datos.listar('conceptos', { obra_id: ctx.obra.id }, ['orden', 'clave', 'creado']));
@@ -380,6 +492,19 @@ window.crearClienteSupabase = function (cfg) {
     }
     function recargar() { return ir(vista, params); }
 
+    // Sin señal: avisa y sube sola la cola al volver internet.
+    if (datos.alCambiar) {
+      datos.alCambiar((e) => {
+        const n = e.pendientes;
+        red.hidden = !(e.sinSenal || n || e.subiendo);
+        red.textContent = e.subiendo ? 'Subiendo cambios…' : e.sinSenal ? `Sin señal · trabajando con lo guardado en el cel${n ? ` · ${n} cambio${n > 1 ? 's' : ''} por subir` : ''}` : n ? `${n} cambio${n > 1 ? 's' : ''} por subir` : '';
+        red.className = 'red' + (e.sinSenal ? ' off' : '');
+        if (e.fallidos && e.fallidos.length) { aviso('Un cambio no se pudo subir: ' + e.fallidos[e.fallidos.length - 1]); e.fallidos.length = 0; }
+      });
+      const subir = () => datos.sincronizar().then((n) => { if (n) { aviso(`${n} cambio${n > 1 ? 's' : ''} subido${n > 1 ? 's' : ''}`); ctx.olvidar(); recargar(); } }).catch(() => {});
+      raiz.addEventListener('online', subir);
+      setInterval(() => { if (datos.estado().pendientes) subir(); }, 30000);
+    }
     return elegirObra().then(() => ir('inicio')).then(() => { if (raiz.RESPALDO) raiz.RESPALDO.automatico(datos).then((x) => { if (x) aviso('Respaldo semanal guardado en tu Drive'); }); return ctx; });
   }
   raiz.iniciarApp = iniciarApp;
@@ -1000,19 +1125,17 @@ window.crearClienteSupabase = function (cfg) {
   raiz.LECTOR = { achicar, leerTexto };
 })(window);
 </script>
-<script>// id: fotos.pendientes · tipo: servicio_externo · módulo: fotos · deps: ninguna
-// Fotos guardadas en el teléfono (IndexedDB) mientras Drive no está conectado o no hay señal.
-// Se suben solas a Drive después. Ojo: si se borran los datos de la app en el teléfono, se pierden.
+<script>// id: fotos.pendientes · tipo: servicio_externo · módulo: fotos · deps: core.local
+// Fotos guardadas en el teléfono mientras Drive no está conectado o no hay señal. Se suben después.
 (function (raiz) {
-  const abrir = () => new Promise((ok, mal) => { const r = indexedDB.open('control-obra', 2); r.onupgradeneeded = () => { const db = r.result; if (!db.objectStoreNames.contains('fotos')) db.createObjectStore('fotos', { keyPath: 'id' }); if (!db.objectStoreNames.contains('miniaturas')) db.createObjectStore('miniaturas', { keyPath: 'drive_id' }); }; r.onsuccess = () => ok(r.result); r.onerror = () => mal(r.error); });
-  const op = async (modo, f, tabla) => { const db = await abrir(); const t = tabla || 'fotos'; return new Promise((ok, mal) => { const tx = db.transaction(t, modo), q = f(tx.objectStore(t)); tx.oncomplete = () => ok(q && q.result); tx.onerror = () => mal(tx.error); }); };
+  const L = () => raiz.LOCAL;
   raiz.PENDIENTES = {
-    guardar: (reg) => op('readwrite', (s) => s.put(Object.assign({ id: 'p' + Date.now() + Math.random().toString(36).slice(2, 6) }, reg))),
-    listar: () => op('readonly', (s) => s.getAll()).then((x) => x || []),
-    borrar: (id) => op('readwrite', (s) => s.delete(id)),
+    guardar: (reg) => L().poner('fotos', Object.assign({ id: 'p' + Date.now() + Math.random().toString(36).slice(2, 6) }, reg)),
+    listar: () => L().todos('fotos'),
+    borrar: (id) => L().quitar('fotos', id),
     // Miniatura chica (unos 15 KB) para ver la foto sin descargarla de Drive cada vez.
-    guardarMini: (drive_id, blob) => op('readwrite', (s) => s.put({ drive_id, blob }), 'miniaturas'),
-    mini: (drive_id) => op('readonly', (s) => s.get(drive_id), 'miniaturas').then((x) => x && x.blob),
+    guardarMini: (drive_id, blob) => L().poner('miniaturas', { drive_id, blob }),
+    mini: (drive_id) => L().leer('miniaturas', drive_id).then((x) => x && x.blob),
   };
 })(window);
 </script>
@@ -1290,7 +1413,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="0.6.0-20261127194553">
+</head><body data-version="0.7.0-20261127195140">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <section id="acceso">
   <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
