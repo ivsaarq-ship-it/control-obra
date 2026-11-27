@@ -1,18 +1,65 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Control de obra</title>
-<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#1f5f8b">
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#1f2a36">
 <link rel="icon" href="iconos/icono-192.png"><link rel="apple-touch-icon" href="iconos/apple-touch-icon.png">
-<style>/* id: ui.estilos · tipo: componente_comun · módulo: ui · deps: ninguna */
-:root { --fondo:#f6f5f2; --texto:#1d1d1b; --borde:#c9c6bf; --acento:#1f5f8b; }
-@media (prefers-color-scheme: dark) { :root { --fondo:#161616; --texto:#eceae6; --borde:#444; --acento:#6aa8d8; } }
-* { box-sizing:border-box } body { margin:0; font:16px/1.4 system-ui,sans-serif; background:var(--fondo); color:var(--texto); }
-.acceso { max-width:360px; margin:12vh auto; padding:0 16px; display:grid; gap:12px; }
-.acceso div { display:grid; gap:10px; } .acceso h1 { font-size:22px; margin:0 0 8px; }
-input, button { font:inherit; padding:12px; border-radius:8px; border:1px solid var(--borde); background:transparent; color:inherit; }
-button.principal { background:var(--acento); color:#fff; border:0; } button.ligero { border:0; opacity:.7; }
-.o { text-align:center; opacity:.6; margin:4px 0; } #msg { min-height:1.4em; } #app { padding:16px; }
+<style>/* id: ui.estilos · tipo: componente_comun · módulo: ui · deps: ninguna · estilo de las maquetas aprobadas */
+:root { --fondo:#f4f4f2; --texto:#1c1c1e; --borde:#cccccc; --oscuro:#1f2a36; --acento:#e8891c; --acento-txt:#a85f0c;
+  --verde:#2e9e5b; --verde-txt:#1d7a43; --rojo:#d93a3a; --rojo-txt:#c02a2a; --tenue:#6b6b6b; --gris:#e7e7e3; --blanco:#ffffff; }
+* { box-sizing:border-box } body { margin:0; font:16px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif; background:var(--fondo); color:var(--texto); }
+input, button, select { font:inherit; color:inherit; }
+input, select { width:100%; padding:13px; border-radius:10px; border:1px solid var(--borde); background:var(--blanco); font-size:15px; }
+button { cursor:pointer; }
 [hidden] { display:none !important; }
+
+/* Acceso */
+.acceso-cab { background:var(--oscuro); color:#fff; padding:90px 24px 36px; text-align:center; }
+.acceso-cab h1 { font-size:26px; margin:10px 0 0; } .acceso-cab img { width:64px; height:64px; border-radius:14px; }
+.acceso { max-width:420px; margin:0 auto; padding:24px; display:grid; gap:14px; }
+.acceso div { display:grid; gap:12px; }
+.o { text-align:center; color:var(--tenue); margin:0; } #msg { min-height:1.4em; text-align:center; }
+
+/* Botones */
+.btn { background:var(--acento); color:#fff; border:0; border-radius:12px; padding:15px; font-weight:700; font-size:16px; text-align:center; width:100%; }
+.btn.o2 { background:var(--blanco); color:var(--oscuro); border:1px solid var(--borde); }
+.btn.lig { background:none; border:0; color:var(--tenue); font-weight:500; }
+
+/* Estructura de la app */
+.app { display:flex; flex-direction:column; min-height:100vh; max-width:560px; margin:0 auto; background:var(--fondo); }
+.top { background:var(--oscuro); color:#fff; padding:18px 16px 14px; padding-top:max(18px, env(safe-area-inset-top)); }
+.top small { opacity:.7; font-size:12px; } .top h1 { font-size:22px; margin:2px 0 0; }
+.cuerpo { flex:1; padding:14px 16px 110px; display:flex; flex-direction:column; gap:10px; }
+.c { background:var(--blanco); border-radius:14px; padding:12px 14px; box-shadow:0 1px 2px #0001; }
+.row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.mu { color:var(--tenue); font-size:12px; } .b { font-weight:700; } .big { font-size:24px; font-weight:800; }
+.lbl { font-size:13px; font-weight:600; } .cap { color:var(--tenue); font-size:12px; font-weight:700; text-transform:uppercase; margin-top:6px; }
+.grid2 { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; }
+.bar { height:8px; background:var(--gris); border-radius:4px; overflow:hidden; margin-top:6px; }
+.bar i { display:block; height:100%; background:var(--acento); } .bar.g i { background:var(--verde); } .bar.r i { background:var(--rojo); }
+.rojo { color:var(--rojo-txt); } .verde { color:var(--verde-txt); } .nar { color:var(--acento-txt); }
+.alerta { border-left:4px solid var(--rojo); }
+.tag { font-size:11px; padding:2px 8px; border-radius:10px; background:#eee; font-weight:600; white-space:nowrap; }
+.tag.p { background:#dff3e6; color:var(--verde-txt); } .tag.c2 { background:#fdeed9; color:#8a4b06; }
+.tabs { display:flex; background:#e6e6e2; border-radius:10px; padding:3px; font-size:13px; gap:3px; }
+.tabs button { flex:1; border:0; background:none; padding:9px 0; border-radius:8px; }
+.tabs button.on { background:var(--blanco); font-weight:700; }
+.chips { display:flex; flex-wrap:wrap; gap:6px; }
+.chips button { border:0; background:#eee; border-radius:14px; padding:8px 12px; font-size:13px; font-weight:600; }
+.chips button.on { background:var(--oscuro); color:#fff; }
+.nav { position:fixed; left:0; right:0; bottom:0; display:flex; justify-content:center; background:var(--blanco); border-top:1px solid #e3e3e3; padding-bottom:env(safe-area-inset-bottom); }
+.nav-in { display:flex; justify-content:space-around; width:100%; max-width:560px; }
+.nav button { flex:1; border:0; background:none; padding:8px 0 12px; font-size:11px; color:#6b6b6b; display:flex; flex-direction:column; align-items:center; gap:2px; }
+.nav button.on { color:var(--acento-txt); font-weight:700; }
+.nav svg { width:22px; height:22px; }
+.fab { position:fixed; right:max(18px, calc(50% - 262px)); bottom:84px; width:56px; height:56px; border-radius:28px; background:var(--acento); color:#fff; border:0; font-size:30px; box-shadow:0 4px 10px #0003; }
+.menu-fab { position:fixed; right:max(18px, calc(50% - 262px)); bottom:150px; display:grid; gap:8px; }
+.menu-fab button { background:var(--oscuro); color:#fff; border:0; border-radius:12px; padding:12px 18px; font-weight:600; text-align:left; }
+table { width:100%; border-collapse:collapse; font-size:12px; } td, th { padding:7px 4px; text-align:right; border-bottom:1px solid #eee; }
+th { color:var(--tenue); font-weight:600; font-size:11px; } td:first-child, th:first-child { text-align:left; } tr.al td { background:#fdeeee; }
+.tabla { overflow-x:auto; }
+.form { display:grid; gap:10px; } .form label { display:grid; gap:6px; font-size:13px; font-weight:600; }
+.aviso { position:fixed; left:50%; transform:translateX(-50%); bottom:150px; background:var(--oscuro); color:#fff; padding:10px 16px; border-radius:10px; font-size:14px; z-index:9; }
+.vacio { text-align:center; color:var(--tenue); padding:24px 8px; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.js"></script>
 <script>// id: core.configuracion · tipo: parametro_negocio · módulo: core · deps: ninguna
@@ -128,53 +175,421 @@ window.crearClienteSupabase = function (cfg) {
   if (typeof module !== 'undefined') module.exports = { crearAcceso }; else raiz.crearAcceso = crearAcceso;
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
-<script>window.PANTALLA_APP = '<h2>Obra</h2><p>Módulos en construcción.</p><div class="acceso"><button id="btnRegHuella" class="principal">Registrar huella / Face ID</button><input id="pinNuevo" inputmode="numeric" maxlength="6" placeholder="PIN nuevo de 6 dígitos" autocomplete="off"><button id="btnFijarPin">Guardar PIN</button><p id="huellas"></p><p id="msgApp" role="status"></p><button id="btnSalir" class="ligero">Salir</button></div>';</script>
-</head><body data-version="0.1.0">
-<!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas -->
-<section id="acceso" class="acceso">
-  <h1>Control de obra</h1>
-  <div data-vista="fuera">
-    <button id="btnPasskey" class="principal">Entrar con huella / Face ID</button>
-    <p class="o">o recibe un enlace</p>
-    <input id="correo" type="email" autocomplete="username webauthn" placeholder="tu correo">
-    <button id="btnEnlace">Enviar enlace al correo</button>
+<script>// id: ui.ayudas · tipo: componente_comun · módulo: ui · deps: ninguna
+// Construye elementos sin innerHTML (los textos del usuario nunca se interpretan como código).
+(function (raiz) {
+  function h(tag, attrs, ...hijos) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v === null || v === undefined || v === false) continue;
+      if (k.startsWith('on')) el.addEventListener(k.slice(2).toLowerCase(), v);
+      else if (k === 'class') el.className = v;
+      else if (k === 'style') el.setAttribute('style', v);
+      else if (k in el && k !== 'list') el[k] = v;
+      else el.setAttribute(k, v === true ? '' : v);
+    }
+    for (const c of hijos.flat(Infinity)) if (c !== null && c !== undefined && c !== false) el.append(c.nodeType ? c : String(c));
+    return el;
+  }
+  const num = (x) => Number(x || 0);
+  const dinero = (x) => '$' + num(x).toLocaleString('es-MX', { maximumFractionDigits: 0 });
+  const corto = (x) => { x = num(x); return x >= 1e6 ? (x / 1e6).toFixed(2).replace(/\.?0+$/, '') + 'M' : x >= 1e3 ? (x / 1e3).toFixed(1).replace(/\.0$/, '') + 'k' : String(Math.round(x)); };
+  const pct = (x) => (x === null || x === undefined ? '—' : Math.round(num(x)) + '%');
+  const hoy = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+  const fechaCorta = (iso) => { if (!iso) return ''; const d = new Date(iso + 'T12:00:00'); return d.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' }); };
+  const barra = (valor, clase) => h('div', { class: 'bar ' + (clase || '') }, h('i', { style: 'width:' + Math.max(0, Math.min(100, num(valor))) + '%' }));
+  const nombreConcepto = (c) => (c ? (c.clave ? c.clave + ' ' : '') + c.concepto : 'Sin concepto');
+  function aviso(texto) {
+    const a = h('div', { class: 'aviso', role: 'status' }, texto); document.body.append(a);
+    setTimeout(() => a.remove(), 2500);
+  }
+  const ICONOS = {
+    inicio: 'M3 11l9-8 9 8M5 10v10h14V10', conceptos: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
+    gastos: 'M12 2v20M17 6H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6', avance: 'M3 17l6-6 4 4 8-8M15 7h6v6', mas: 'M4 6h16M4 12h16M4 18h16',
+  };
+  const icono = (n) => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '2'); s.setAttribute('aria-hidden', 'true'); const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', ICONOS[n]); s.append(p); return s; };
+  raiz.UI = { h, num, dinero, corto, pct, hoy, fechaCorta, barra, nombreConcepto, aviso, icono };
+})(window);
+</script>
+<script>// id: core.datos · tipo: proceso_base · módulo: core · deps: acceso.servicio
+// Única puerta a la base de datos. Todo pasa por aquí (fácil de probar y de cambiar).
+(function (raiz) {
+  function crearDatos(sb) {
+    const revisar = ({ data, error }) => { if (error) throw new Error(error.message || 'Error de base de datos'); return data; };
+    return {
+      async listar(tabla, filtro, orden) {
+        let q = sb.from(tabla).select('*');
+        for (const [k, v] of Object.entries(filtro || {})) q = Array.isArray(v) ? q.in(k, v) : q.eq(k, v);
+        for (const o of orden || []) q = q.order(o.replace(/^-/, ''), { ascending: !o.startsWith('-') });
+        return revisar(await q);
+      },
+      async crear(tabla, fila) { return revisar(await sb.from(tabla).insert(fila).select().single()); },
+      async cambiar(tabla, id, cambios) { return revisar(await sb.from(tabla).update(cambios).eq('id', id).select().single()); },
+      async borrar(tabla, id) { revisar(await sb.from(tabla).delete().eq('id', id)); },
+      async rpc(fn, args) { return revisar(await sb.rpc(fn, args)); },
+    };
+  }
+  if (typeof module !== 'undefined') module.exports = { crearDatos }; else raiz.crearDatos = crearDatos;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>// id: reporte.resumen · tipo: regla_calculo · módulo: reporte · deps: reporte.gastado_vs_avance
+// Totales de la obra a partir de las filas de reporte_conceptos.
+(function (raiz) {
+  function resumenObra(filas) {
+    const n = (x) => Number(x || 0);
+    const presupuesto = filas.reduce((s, f) => s + n(f.presupuesto), 0);
+    const comprometido = filas.reduce((s, f) => s + n(f.comprometido), 0);
+    const pagado = filas.reduce((s, f) => s + n(f.pagado), 0);
+    // Avance físico ponderado por importe; gastado = comprometido + pagado sobre presupuesto.
+    const avance = presupuesto > 0 ? filas.reduce((s, f) => s + n(f.presupuesto) * n(f.pct_avance), 0) / presupuesto : 0;
+    const gastado = presupuesto > 0 ? (100 * (comprometido + pagado)) / presupuesto : 0;
+    const alertas = filas.filter((f) => f.alerta);
+    return { presupuesto, comprometido, pagado, avance, gastado, alertas };
+  }
+  if (typeof module !== 'undefined') module.exports = { resumenObra }; else raiz.resumenObra = resumenObra;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>// id: core.app · tipo: proceso_base · módulo: core · deps: core.datos, ui.ayudas, todas las pantallas
+// Estructura: encabezado, contenido, menú inferior y botón +. Solo se arma después del login.
+(function (raiz) {
+  const { h, aviso, icono } = raiz.UI;
+  raiz.PANTALLAS = raiz.PANTALLAS || {};
+  const MENU = [['inicio', 'Inicio'], ['conceptos', 'Conceptos'], ['gastos', 'Gastos'], ['avances', 'Avance', 'avance'], ['mas', 'Más']];
+
+  function iniciarApp(cont, datos, opciones) {
+    const ctx = { datos, obra: null, cache: {}, ir, recargar, aviso, acceso: opciones.acceso };
+    let vista = 'inicio', params = {};
+    const top = h('header', { class: 'top' }), cuerpo = h('section', { class: 'cuerpo' });
+    const nav = h('nav', { class: 'nav', 'aria-label': 'Menú' }, h('div', { class: 'nav-in' }, MENU.map(([id, txt, ic]) =>
+      h('button', { 'data-ir': id, onclick: () => ir(id) }, icono(ic || id), txt))));
+    const menuFab = h('div', { class: 'menu-fab', hidden: true },
+      h('button', { onclick: () => ir('gasto_nuevo') }, '+ Gasto'),
+      h('button', { onclick: () => ir('avances', { registrar: true }) }, '+ Avance'));
+    const fab = h('button', { class: 'fab', 'aria-label': 'Agregar', onclick: () => { menuFab.hidden = !menuFab.hidden; } }, '+');
+    cont.replaceChildren(h('div', { class: 'app' }, top, cuerpo), menuFab, fab, nav);
+
+    // Lo que cambia poco se guarda en memoria y se refresca al guardar algo.
+    ctx.conceptos = async () => (ctx.cache.conceptos ||= await datos.listar('conceptos', { obra_id: ctx.obra.id }, ['orden', 'clave', 'creado']));
+    ctx.listas = async (lista) => (ctx.cache['l_' + lista] ||= await datos.listar('listas', { lista, activo: true }, ['orden', 'valor']));
+    ctx.olvidar = () => { ctx.cache = {}; };
+
+    async function elegirObra() {
+      const obras = await datos.listar('obras', {}, ['creado']);
+      let guardada = null; try { guardada = localStorage.getItem('obraActiva'); } catch (e) { /* sin almacenamiento */ }
+      ctx.obra = obras.find((o) => o.id === guardada) || obras[obras.length - 1] || null;
+      return obras;
+    }
+    ctx.usarObra = (o) => { ctx.obra = o; ctx.olvidar(); try { localStorage.setItem('obraActiva', o.id); } catch (e) { /* sin almacenamiento */ } };
+
+    async function ir(v, p) {
+      vista = v; params = p || {}; menuFab.hidden = true;
+      const base = v === 'gasto_nuevo' ? 'gastos' : v;
+      nav.querySelectorAll('[data-ir]').forEach((b) => b.classList.toggle('on', b.dataset.ir === base));
+      if (!ctx.obra && v !== 'obra') { vista = 'obra'; params = { nueva: true }; }
+      fab.hidden = !ctx.obra || ['obra', 'mas', 'gasto_nuevo'].includes(vista);
+      nav.hidden = !ctx.obra;
+      const pantalla = raiz.PANTALLAS[vista];
+      cuerpo.replaceChildren(h('p', { class: 'vacio' }, 'Cargando…'));
+      try {
+        const r = await pantalla(ctx, params);
+        top.replaceChildren(h('small', {}, r.sub || (ctx.obra ? ctx.obra.nombre : '')), h('h1', {}, r.titulo));
+        cuerpo.replaceChildren(...[].concat(r.contenido).flat(Infinity).filter(Boolean));
+        document.dispatchEvent(new CustomEvent('pantalla', { detail: vista }));
+      } catch (e) {
+        top.replaceChildren(h('h1', {}, 'Error'));
+        cuerpo.replaceChildren(h('div', { class: 'c alerta' }, h('div', { class: 'b rojo' }, 'No se pudo cargar'), h('div', { class: 'mu' }, e.message)), h('button', { class: 'btn o2', onclick: () => ir(vista, params) }, 'Reintentar'));
+      }
+    }
+    function recargar() { return ir(vista, params); }
+
+    return elegirObra().then(() => ir('inicio')).then(() => ctx);
+  }
+  raiz.iniciarApp = iniciarApp;
+})(window);
+</script>
+<script>// id: obra.pantalla · tipo: pantalla · módulo: obra · deps: obra.esquema, core.app
+(function (raiz) {
+  const { h, num } = raiz.UI;
+  raiz.PANTALLAS.obra = async (ctx, p) => {
+    const o = p.nueva ? {} : ctx.obra || {};
+    const campo = (et, name, tipo, extra) => h('label', {}, et, h('input', Object.assign({ name, type: tipo || 'text', value: o[name] ?? '' }, extra || {})));
+    const msg = h('p', { class: 'mu', role: 'status' });
+    const form = h('form', { class: 'form', onsubmit: async (ev) => {
+      ev.preventDefault(); const f = new FormData(form);
+      const fila = { nombre: f.get('nombre').trim(), cliente: f.get('cliente').trim() || null, ubicacion: f.get('ubicacion').trim() || null,
+        fecha_inicio: f.get('fecha_inicio') || null, fecha_fin: f.get('fecha_fin') || null, monto_contrato: f.get('monto_contrato') ? num(f.get('monto_contrato')) : null };
+      if (!fila.nombre) { msg.textContent = 'Escribe el nombre de la obra'; return; }
+      try {
+        const g = o.id ? await ctx.datos.cambiar('obras', o.id, fila) : await ctx.datos.crear('obras', fila);
+        ctx.usarObra(g); ctx.aviso('Obra guardada'); ctx.ir('inicio');
+      } catch (e) { msg.textContent = 'No se guardó: ' + e.message; }
+    } },
+      campo('Nombre de la obra', 'nombre', 'text', { required: true, placeholder: 'Ej. Casa Las Lomas' }),
+      campo('Cliente (opcional)', 'cliente'), campo('Ubicación (opcional)', 'ubicacion'),
+      h('div', { class: 'grid2' }, campo('Inicio', 'fecha_inicio', 'date'), campo('Fin', 'fecha_fin', 'date')),
+      campo('Monto de contrato (opcional)', 'monto_contrato', 'number', { inputMode: 'decimal', step: '0.01', min: '0' }),
+      msg, h('button', { class: 'btn', type: 'submit' }, 'Guardar obra'));
+    return { titulo: o.id ? 'Datos de la obra' : 'Nueva obra', sub: o.id ? o.nombre : 'Empieza aquí', contenido: form };
+  };
+})(window);
+</script>
+<script>// id: inicio.pantalla · tipo: pantalla · módulo: inicio · deps: reporte.resumen, gastos.esquema, sueldos.esquema
+(function (raiz) {
+  const { h, dinero, pct, barra, nombreConcepto, hoy, fechaCorta } = raiz.UI;
+  const lunes = (iso) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
+  raiz.PANTALLAS.inicio = async (ctx) => {
+    const obra = ctx.obra.id, desde = lunes(hoy());
+    const [filas, gastos, sueldos] = await Promise.all([
+      ctx.datos.listar('reporte_conceptos', { obra_id: obra }),
+      ctx.datos.listar('gastos', { obra_id: obra }), ctx.datos.listar('sueldos', { obra_id: obra })]);
+    const r = raiz.resumenObra(filas);
+    const semana = (xs) => xs.filter((x) => x.fecha >= desde).reduce((s, x) => s + Number(x.monto), 0);
+    const contenido = [
+      h('div', { class: 'grid2' },
+        h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Presupuesto'), h('div', { class: 'b', style: 'font-size:18px' }, dinero(r.presupuesto))),
+        h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Pagado'), h('div', { class: 'b', style: 'font-size:18px' }, dinero(r.pagado)))),
+      h('div', { class: 'c' },
+        h('div', { class: 'row' }, h('span', { class: 'lbl' }, 'Avance físico'), h('span', { class: 'b verde' }, pct(r.avance))), barra(r.avance, 'g'),
+        h('div', { class: 'row', style: 'margin-top:10px' }, h('span', { class: 'lbl' }, 'Gastado'), h('span', { class: 'b ' + (r.gastado > r.avance ? 'rojo' : 'nar') }, pct(r.gastado))), barra(r.gastado, r.gastado > r.avance ? 'r' : '')),
+      r.alertas.length ? h('button', { class: 'c alerta', style: 'text-align:left;border-top:0;border-right:0;border-bottom:0', onclick: () => ctx.ir('reporte') },
+        h('div', { class: 'b rojo' }, `⚠ ${r.alertas.length} concepto${r.alertas.length > 1 ? 's gastan' : ' gasta'} más de lo avanzado`),
+        h('div', { class: 'mu' }, r.alertas.slice(0, 3).map(nombreConcepto).join(' · '))) : null,
+      h('div', { class: 'c' },
+        h('div', { class: 'row' }, h('span', { class: 'lbl' }, 'Esta semana'), h('span', { class: 'mu' }, 'desde ' + fechaCorta(desde))),
+        h('div', { class: 'row', style: 'margin-top:6px' }, h('span', {}, 'Gastos'), h('span', { class: 'b' }, dinero(semana(gastos)))),
+        h('div', { class: 'row' }, h('span', {}, 'Sueldos'), h('span', { class: 'b' }, dinero(semana(sueldos))))),
+      filas.length ? null : h('div', { class: 'c' }, h('div', { class: 'lbl' }, 'Aún no hay conceptos'), h('div', { class: 'mu' }, 'Agrega tus conceptos para ver avance y alertas.'),
+        h('button', { class: 'btn', style: 'margin-top:10px', onclick: () => ctx.ir('conceptos') }, 'Ir a conceptos')),
+    ];
+    return { titulo: 'Resumen', contenido };
+  };
+})(window);
+</script>
+<script>// id: conceptos.pantalla · tipo: pantalla · módulo: conceptos · deps: conceptos.esquema, reporte.gastado_vs_avance
+(function (raiz) {
+  const { h, num, dinero, barra, nombreConcepto } = raiz.UI;
+  raiz.PANTALLAS.conceptos = async (ctx) => {
+    const [cs, rep] = await Promise.all([ctx.conceptos(), ctx.datos.listar('reporte_conceptos', { obra_id: ctx.obra.id })]);
+    const av = Object.fromEntries(rep.map((r) => [r.concepto_id, num(r.pct_avance)]));
+    const lista = h('div', { style: 'display:grid;gap:10px' });
+    function pintar(filtro) {
+      const f = (filtro || '').toLowerCase(), grupos = {};
+      cs.filter((c) => !f || nombreConcepto(c).toLowerCase().includes(f) || (c.capitulo || '').toLowerCase().includes(f))
+        .forEach((c) => { (grupos[c.capitulo || 'Sin capítulo'] ||= []).push(c); });
+      lista.replaceChildren(...Object.entries(grupos).flatMap(([cap, xs]) => [h('div', { class: 'cap' }, cap), ...xs.map((c) =>
+        h('div', { class: 'c' }, h('div', { class: 'row' }, h('span', { class: 'lbl' }, nombreConcepto(c)), h('span', { class: 'b' }, dinero(c.importe))),
+          h('div', { class: 'mu' }, `${num(c.cantidad).toLocaleString('es-MX')} ${c.unidad || ''} × ${dinero(c.precio_unitario)} · avance ${Math.round(av[c.id] || 0)}%`), barra(av[c.id] || 0, 'g')))]));
+      if (!cs.length) lista.replaceChildren(h('p', { class: 'vacio' }, 'Sin conceptos. Agrega el primero abajo.'));
+    }
+    pintar();
+    const msg = h('p', { class: 'mu', role: 'status' });
+    const campo = (et, name, extra) => h('label', {}, et, h('input', Object.assign({ name }, extra || {})));
+    const form = h('form', { class: 'form c', hidden: true, onsubmit: async (ev) => {
+      ev.preventDefault(); const d = new FormData(form);
+      const fila = { obra_id: ctx.obra.id, capitulo: d.get('capitulo').trim() || null, clave: d.get('clave').trim() || null, concepto: d.get('concepto').trim(),
+        unidad: d.get('unidad').trim() || null, cantidad: num(d.get('cantidad')), precio_unitario: num(d.get('precio_unitario')), orden: cs.length + 1 };
+      if (!fila.concepto) { msg.textContent = 'Escribe el concepto'; return; }
+      try { await ctx.datos.crear('conceptos', fila); ctx.olvidar(); ctx.aviso('Concepto agregado'); ctx.recargar(); } catch (e) { msg.textContent = 'No se guardó: ' + e.message; }
+    } },
+      h('div', { class: 'lbl' }, 'Nuevo concepto'),
+      h('div', { class: 'grid2' }, campo('Capítulo', 'capitulo', { placeholder: 'Ej. 2 Cimentación', value: cs.length ? cs[cs.length - 1].capitulo || '' : '' }), campo('Clave', 'clave', { placeholder: 'Ej. 2.2' })),
+      campo('Concepto', 'concepto', { required: true, placeholder: 'Ej. Zapata corrida' }),
+      h('div', { class: 'grid2' }, campo('Unidad', 'unidad', { placeholder: 'm², m³, pza' }), campo('Cantidad', 'cantidad', { type: 'number', step: 'any', min: '0', inputMode: 'decimal', required: true })),
+      campo('Precio unitario', 'precio_unitario', { type: 'number', step: '0.01', min: '0', inputMode: 'decimal', required: true }),
+      msg, h('button', { class: 'btn', type: 'submit' }, 'Guardar concepto'));
+    const total = cs.reduce((s, c) => s + num(c.importe), 0);
+    return { titulo: 'Conceptos', sub: `${ctx.obra.nombre} · ${cs.length} conceptos · ${dinero(total)}`, contenido: [
+      h('input', { type: 'search', placeholder: 'Buscar concepto', 'aria-label': 'Buscar concepto', oninput: (e) => pintar(e.target.value) }), lista,
+      h('button', { class: 'btn o2', onclick: () => { form.hidden = !form.hidden; } }, '+ Agregar concepto'), form,
+      h('button', { class: 'btn o2', disabled: true, title: 'Pendiente: cuando subas tu Excel' }, 'Cargar desde Excel (pendiente)')] };
+  };
+})(window);
+</script>
+<script>// id: gastos.pantalla · tipo: pantalla · módulo: gastos · deps: gastos.esquema, conceptos.esquema
+(function (raiz) {
+  const { h, num, dinero, fechaCorta, nombreConcepto, hoy } = raiz.UI;
+  raiz.PANTALLAS.gastos = async (ctx, p) => {
+    const filtro = p.estado || 'todos';
+    const [gs, cs, tipos] = await Promise.all([ctx.datos.listar('gastos', { obra_id: ctx.obra.id }, ['-fecha', '-creado']), ctx.conceptos(), ctx.listas('tipo_gasto')]);
+    const cMap = Object.fromEntries(cs.map((c) => [c.id, c])), tMap = Object.fromEntries(tipos.map((t) => [t.id, t.valor]));
+    const suma = (e) => gs.filter((g) => g.estado === e).reduce((s, g) => s + num(g.monto), 0);
+    const vis = gs.filter((g) => filtro === 'todos' || g.estado === filtro);
+    const tab = (id, txt) => h('button', { class: filtro === id ? 'on' : '', onclick: () => ctx.ir('gastos', { estado: id }) }, txt);
+    const fila = (g) => h('div', { class: 'c' },
+      h('div', { class: 'row' }, h('span', { class: 'lbl' }, g.nota || g.proveedor || tMap[g.tipo_id] || 'Gasto'), h('span', { class: 'b' }, dinero(g.monto))),
+      h('div', { class: 'row' }, h('span', { class: 'mu' }, [tMap[g.tipo_id], g.concepto_id ? nombreConcepto(cMap[g.concepto_id]) : null, fechaCorta(g.fecha)].filter(Boolean).join(' · ') + (g.comprobante ? ' · comprobante' : '')),
+        g.estado === 'pagado' ? h('span', { class: 'tag p' }, 'Pagado')
+          : h('button', { class: 'tag c2', style: 'border:0', title: 'Marcar como pagado', onclick: async () => { await ctx.datos.cambiar('gastos', g.id, { estado: 'pagado' }); ctx.aviso('Marcado como pagado'); ctx.recargar(); } }, 'Comprometido')));
+    return { titulo: 'Gastos', contenido: [
+      h('div', { class: 'tabs' }, tab('todos', 'Todos'), tab('comprometido', 'Comprometido'), tab('pagado', 'Pagado')),
+      h('div', { class: 'grid2' }, h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Comprometido'), h('div', { class: 'b nar' }, dinero(suma('comprometido')))),
+        h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Pagado'), h('div', { class: 'b verde' }, dinero(suma('pagado'))))),
+      vis.length ? vis.map(fila) : h('p', { class: 'vacio' }, 'Sin gastos todavía. Usa el botón +.')] };
+  };
+
+  raiz.PANTALLAS.gasto_nuevo = async (ctx) => {
+    const [cs, tipos] = await Promise.all([ctx.conceptos(), ctx.listas('tipo_gasto')]);
+    let tipo = tipos[0] ? tipos[0].id : null, estado = 'pagado';
+    const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Tipo' }, tipos.map((t) => h('button', { type: 'button', class: t.id === tipo ? 'on' : '', onclick: (e) => { tipo = t.id; chips.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === e.currentTarget)); } }, t.valor)));
+    const est = h('div', { class: 'tabs' }, ['comprometido', 'pagado'].map((x) => h('button', { type: 'button', class: x === estado ? 'on' : '', onclick: (e) => { estado = x; est.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === e.currentTarget)); } }, x === 'pagado' ? 'Pagado' : 'Comprometido')));
+    const msg = h('p', { class: 'mu', role: 'status' });
+    const form = h('form', { class: 'form', onsubmit: async (ev) => {
+      ev.preventDefault(); const d = new FormData(form); const monto = num(d.get('monto'));
+      if (!(monto > 0)) { msg.textContent = 'Escribe un monto mayor a 0'; return; }
+      try {
+        await ctx.datos.crear('gastos', { obra_id: ctx.obra.id, tipo_id: tipo, concepto_id: d.get('concepto_id') || null, fecha: d.get('fecha') || hoy(), monto, estado,
+          nota: d.get('nota').trim() || null, proveedor: d.get('proveedor').trim() || null, comprobante: d.get('comprobante').trim() || null });
+        ctx.aviso('Gasto guardado'); ctx.ir('gastos');
+      } catch (e) { msg.textContent = 'No se guardó: ' + e.message; }
+    } },
+      h('label', {}, 'Monto', h('input', { name: 'monto', type: 'number', step: '0.01', min: '0', inputMode: 'decimal', required: true, style: 'font-size:22px;font-weight:700' })),
+      h('label', {}, 'Descripción', h('input', { name: 'nota', placeholder: 'Ej. Cemento 120 bultos' })),
+      h('div', { class: 'lbl' }, 'Tipo'), chips,
+      h('label', {}, 'Concepto', h('select', { name: 'concepto_id' }, h('option', { value: '' }, 'Sin concepto (gasto general)'), cs.map((c) => h('option', { value: c.id }, nombreConcepto(c))))),
+      h('label', {}, 'Fecha', h('input', { name: 'fecha', type: 'date', value: hoy() })),
+      est,
+      h('div', { class: 'grid2' }, h('label', {}, 'Proveedor', h('input', { name: 'proveedor' })), h('label', {}, 'Comprobante', h('input', { name: 'comprobante', placeholder: 'Folio o enlace' }))),
+      msg, h('button', { class: 'btn', type: 'submit' }, 'Guardar'), h('button', { class: 'btn lig', type: 'button', onclick: () => ctx.ir('gastos') }, 'Cancelar'));
+    return { titulo: 'Nuevo gasto', sub: 'Gastos', contenido: form };
+  };
+})(window);
+</script>
+<script>// id: avances.pantalla · tipo: pantalla · módulo: avances · deps: avances.esquema, conceptos.esquema
+(function (raiz) {
+  const { h, num, barra, nombreConcepto, fechaCorta, hoy } = raiz.UI;
+  raiz.PANTALLAS.avances = async (ctx, p) => {
+    const cs = await ctx.conceptos();
+    if (!cs.length) return { titulo: 'Avances', contenido: [h('p', { class: 'vacio' }, 'Primero agrega conceptos.'), h('button', { class: 'btn', onclick: () => ctx.ir('conceptos') }, 'Ir a conceptos')] };
+    const avs = await ctx.datos.listar('avances', { concepto_id: cs.map((c) => c.id) }, ['-fecha', '-creado']);
+    const ejec = {}; avs.forEach((a) => { ejec[a.concepto_id] = (ejec[a.concepto_id] || 0) + num(a.cantidad); });
+    const cMap = Object.fromEntries(cs.map((c) => [c.id, c]));
+    const pctDe = (c, extra) => (num(c.cantidad) > 0 ? (100 * ((ejec[c.id] || 0) + (extra || 0))) / num(c.cantidad) : 0);
+    let sel = p.concepto || cs[0].id;
+    const unidad = h('span', { class: 'b' }), prev = h('span', { class: 'mu' }), msg = h('p', { class: 'mu', role: 'status' });
+    const cant = h('input', { name: 'cantidad', type: 'number', step: 'any', min: '0', inputMode: 'decimal', required: true, style: 'font-size:20px;font-weight:700', 'aria-label': 'Cantidad ejecutada hoy',
+      oninput: () => actualizar() });
+    const selC = h('select', { name: 'concepto', 'aria-label': 'Concepto', onchange: (e) => { sel = e.target.value; actualizar(); } }, cs.map((c) => h('option', { value: c.id, selected: c.id === sel }, nombreConcepto(c))));
+    function actualizar() { const c = cMap[sel]; unidad.textContent = c.unidad || ''; prev.textContent = '→ ' + Math.round(pctDe(c, num(cant.value))) + '%'; }
+    actualizar();
+    const fecha = h('input', { type: 'date', value: hoy(), 'aria-label': 'Fecha' }), nota = h('input', { placeholder: 'Nota (opcional)', 'aria-label': 'Nota' });
+    const form = h('form', { class: 'c form', style: 'border:2px solid var(--acento)', onsubmit: async (ev) => {
+      ev.preventDefault(); const q = num(cant.value);
+      if (!(q > 0)) { msg.textContent = 'Escribe la cantidad ejecutada'; return; }
+      const c = cMap[sel];
+      if (pctDe(c, q) > 100 && !confirmarExceso.checked) { msg.textContent = 'Pasa del 100% del concepto. Marca la casilla si es correcto.'; confirmarExceso.parentElement.hidden = false; return; }
+      try { await ctx.datos.crear('avances', { concepto_id: sel, fecha: fecha.value || hoy(), cantidad: q, nota: nota.value.trim() || null }); ctx.aviso('Avance guardado'); ctx.ir('avances', { concepto: sel }); }
+      catch (e) { msg.textContent = 'No se guardó: ' + e.message; }
+    } }, h('div', { class: 'lbl' }, 'Registrar avance'), selC, h('div', { class: 'row' }, cant, unidad, prev), fecha, nota);
+    const confirmarExceso = h('input', { type: 'checkbox', style: 'width:auto' });
+    form.append(h('label', { hidden: true, style: 'display:flex;gap:8px;align-items:center' }, confirmarExceso, 'Sí, pasa del 100%'), msg, h('button', { class: 'btn', type: 'submit' }, 'Guardar'));
+    const lista = cs.filter((c) => ejec[c.id]).map((c) => h('button', { class: 'c', style: 'text-align:left;border:0', onclick: () => { sel = c.id; selC.value = c.id; actualizar(); cant.focus(); } },
+      h('div', { class: 'row' }, h('span', { class: 'lbl' }, nombreConcepto(c)), h('span', { class: 'b verde' }, Math.round(pctDe(c)) + '%')),
+      h('div', { class: 'mu' }, `${(ejec[c.id] || 0).toLocaleString('es-MX')} de ${num(c.cantidad).toLocaleString('es-MX')} ${c.unidad || ''}`), barra(pctDe(c), 'g')));
+    const ult = avs.slice(0, 10).map((a) => h('div', { class: 'c row' }, h('span', {}, fechaCorta(a.fecha) + ' · ' + nombreConcepto(cMap[a.concepto_id])), h('span', { class: 'b' }, '+' + num(a.cantidad).toLocaleString('es-MX') + ' ' + (cMap[a.concepto_id].unidad || ''))));
+    if (p.registrar) setTimeout(() => cant.focus(), 50);
+    return { titulo: 'Avances', contenido: [form, ...lista, ult.length ? h('div', { class: 'cap' }, 'Últimos') : null, ...ult] };
+  };
+})(window);
+</script>
+<script>// id: reporte.pantalla · tipo: pantalla · módulo: reporte · deps: reporte.gastado_vs_avance, reporte.resumen
+(function (raiz) {
+  const { h, corto, pct, nombreConcepto, hoy, fechaCorta } = raiz.UI;
+  raiz.PANTALLAS.reporte = async (ctx) => {
+    const fs = await ctx.datos.listar('reporte_conceptos', { obra_id: ctx.obra.id });
+    const r = raiz.resumenObra(fs);
+    const td = (v, cl) => h('td', { class: cl || '' }, v);
+    const tabla = h('table', {}, h('thead', {}, h('tr', {}, ['Concepto', 'Presup.', 'Comprom.', 'Pagado', '% Gast', '% Av'].map((t) => h('th', { scope: 'col' }, t)))),
+      h('tbody', {}, fs.map((f) => h('tr', { class: f.alerta ? 'al' : '' }, td((f.alerta ? '● ' : '') + nombreConcepto(f), f.alerta ? 'rojo b' : ''), td(corto(f.presupuesto)), td(corto(f.comprometido)), td(corto(f.pagado)),
+        td(pct(f.pct_gastado), f.alerta ? 'rojo b' : ''), td(pct(f.pct_avance), f.alerta ? '' : 'verde b'))),
+        h('tr', {}, td('Total', 'b'), td(corto(r.presupuesto), 'b'), td(corto(r.comprometido), 'b'), td(corto(r.pagado), 'b'), td(pct(r.gastado), 'b'), td(pct(r.avance), 'b'))));
+    return { titulo: 'Reporte por concepto', sub: 'Al ' + fechaCorta(hoy()), contenido: [
+      fs.length ? h('div', { class: 'c tabla', style: 'padding:6px 8px' }, tabla) : h('p', { class: 'vacio' }, 'Sin conceptos todavía.'),
+      r.alertas.length ? h('div', { class: 'c alerta' }, h('div', { class: 'b rojo' }, '● Gastado supera avance'),
+        h('div', { class: 'mu' }, r.alertas.map((f) => `${nombreConcepto(f)}: +${Math.round(Number(f.pct_gastado) - Number(f.pct_avance || 0))} puntos`).join(' · '))) : null,
+      h('div', { class: 'mu' }, 'Gastado = comprometido + pagado (gastos y sueldos a destajo). PDF y Excel: siguiente etapa.')] };
+  };
+})(window);
+</script>
+<script>// id: ajustes.pantalla · tipo: pantalla · módulo: ajustes · deps: acceso.reglas, obra.pantalla
+(function (raiz) {
+  const { h } = raiz.UI;
+  raiz.PANTALLAS.mas = async (ctx) => {
+    const obras = await ctx.datos.listar('obras', {}, ['creado']);
+    const ir = (txt, v, p, desc) => h('button', { class: 'c', style: 'text-align:left;border:0', onclick: () => ctx.ir(v, p) }, h('div', { class: 'lbl' }, txt), desc ? h('div', { class: 'mu' }, desc) : null);
+    const proximo = (txt) => h('div', { class: 'c', style: 'opacity:.6' }, h('div', { class: 'lbl' }, txt), h('div', { class: 'mu' }, 'Siguiente etapa'));
+    return { titulo: 'Más', contenido: [
+      ir('Reporte por concepto', 'reporte', null, 'Presupuesto, comprometido, pagado, % gastado vs % avance'),
+      proximo('Sueldos'), proximo('Bitácora'), proximo('Calendario'), proximo('Fotos'), proximo('Estimaciones'),
+      h('div', { class: 'cap' }, 'Obra'),
+      ir('Datos de la obra', 'obra', null, ctx.obra.nombre),
+      obras.length > 1 ? h('label', { class: 'form' }, h('span', { class: 'lbl' }, 'Cambiar de obra'), h('select', { onchange: (e) => { ctx.usarObra(obras.find((o) => o.id === e.target.value)); ctx.ir('inicio'); } },
+        obras.map((o) => h('option', { value: o.id, selected: o.id === ctx.obra.id }, o.nombre)))) : null,
+      ir('+ Nueva obra', 'obra', { nueva: true }),
+      h('div', { class: 'cap' }, 'Seguridad'),
+      h('div', { class: 'c form' }, h('p', { id: 'huellas', class: 'mu', style: 'margin:0' }),
+        h('button', { id: 'btnRegHuella', class: 'btn' }, 'Registrar huella / Face ID'),
+        h('input', { id: 'pinNuevo', inputMode: 'numeric', maxLength: 6, placeholder: 'PIN nuevo de 6 dígitos', autocomplete: 'off', 'aria-label': 'PIN nuevo' }),
+        h('button', { id: 'btnFijarPin', class: 'btn o2' }, 'Guardar PIN'), h('p', { id: 'msgApp', class: 'mu', role: 'status', style: 'margin:0' })),
+      h('button', { id: 'btnSalir', class: 'btn lig' }, 'Salir')] };
+  };
+})(window);
+</script>
+</head><body data-version="0.2.0">
+<!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
+<section id="acceso">
+  <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
+  <div class="acceso">
+    <div data-vista="fuera">
+      <button id="btnPasskey" class="btn" style="font-size:18px;padding:20px">Entrar con huella / Face ID</button>
+      <p class="o">o recibe un enlace</p>
+      <input id="correo" type="email" autocomplete="username webauthn" placeholder="tu@correo.com" aria-label="Correo">
+      <button id="btnEnlace" class="btn o2">Enviarme enlace</button>
+    </div>
+    <div data-vista="bloqueada">
+      <button id="btnPasskey2" class="btn" style="font-size:18px;padding:20px">Desbloquear con huella / Face ID</button>
+      <p class="o">o con tu PIN</p>
+      <input id="pin" inputmode="numeric" maxlength="6" placeholder="PIN de 6 dígitos" autocomplete="off" aria-label="PIN">
+      <button id="btnPin" class="btn o2">Entrar con PIN</button>
+      <button id="btnSalir2" class="btn lig">Cerrar sesión</button>
+    </div>
+    <p id="msg" role="status"></p>
   </div>
-  <div data-vista="bloqueada">
-    <button id="btnPasskey2" class="principal">Desbloquear con huella / Face ID</button>
-    <p class="o">o con tu PIN</p>
-    <input id="pin" inputmode="numeric" maxlength="6" placeholder="PIN de 6 dígitos" autocomplete="off">
-    <button id="btnPin">Entrar con PIN</button>
-    <button id="btnSalir2" class="ligero">Cerrar sesión</button>
-  </div>
-  <p id="msg" role="status"></p>
 </section>
 <main id="app" hidden></main>
 <script>
 (function () {
   const sb = window.crearClienteSupabase(window.CONFIG);
   const a = window.crearAcceso(sb, { minutosBloqueo: window.CONFIG.minutosBloqueoInactividad });
+  const datos = window.crearDatos(sb);
   const $ = (id) => document.getElementById(id);
   const msg = (t) => { $('msg').textContent = t || ''; };
+  let dentroAntes = false;
   function pintar(e) {
     document.querySelectorAll('[data-vista]').forEach((d) => { d.hidden = d.dataset.vista !== e; });
     $('acceso').hidden = e === 'dentro';
     const app = $('app');
-    if (e === 'dentro') { app.innerHTML = window.PANTALLA_APP || ''; app.hidden = false; mostrarHuellas(); const mm = $('msgApp'); if (mm) mm.textContent = 'Entraste con ' + a.metodo(); }
-    else { app.innerHTML = ''; app.hidden = true; } // nada de la app existe sin login
+    if (e === 'dentro') {
+      app.hidden = false;
+      if (!dentroAntes) { window.iniciarApp(app, datos, { acceso: a }).then(() => window.UI.aviso('Entraste con ' + a.metodo())); }
+      else window.UI.aviso('Entraste con ' + a.metodo());
+      dentroAntes = true;
+    } else if (e === 'fuera') { app.replaceChildren(); app.hidden = true; dentroAntes = false; } // nada de la app existe sin login
+    else { app.hidden = true; } // bloqueada: se oculta; al desbloquear vuelve donde estaba
   }
   async function mostrarHuellas() {
     const n = await a.contarPasskeys(), el = $('huellas');
     if (el) el.textContent = n === null ? 'Huellas registradas: no se pudo consultar' : 'Huellas registradas: ' + n;
   }
+  document.addEventListener('pantalla', (ev) => { if (ev.detail === 'mas') mostrarHuellas(); });
   a.alCambiar(pintar);
   const r = (p) => p.then((x) => msg(x.ok ? (x.mensaje || '') : x.mensaje));
   $('btnPasskey').onclick = $('btnPasskey2').onclick = () => r(a.entrarConPasskey());
   $('btnEnlace').onclick = () => r(a.enviarEnlace($('correo').value.trim()));
   $('btnPin').onclick = () => { r(a.entrarConPin($('pin').value)); $('pin').value = ''; };
   $('btnSalir2').onclick = () => a.salir();
-  // Botones dentro de la app (configurar huella y PIN)
+  // Botones de la pantalla Más (huella, PIN, salir)
   $('app').addEventListener('click', async (ev) => {
-    const id = ev.target.id, m = (t) => { $('msgApp').textContent = t; };
+    const id = ev.target.id, m = (t) => { const el = $('msgApp'); if (el) el.textContent = t; };
     if (id === 'btnRegHuella') { m('Esperando huella…'); const x = await a.registrarPasskey(); m(x.ok ? 'Huella registrada' : 'Error: ' + x.mensaje); mostrarHuellas(); }
     if (id === 'btnFijarPin') { const x = await a.fijarPin($('pinNuevo').value); $('pinNuevo').value = ''; m(x.ok ? 'PIN guardado' : x.mensaje); }
     if (id === 'btnSalir') a.salir();
