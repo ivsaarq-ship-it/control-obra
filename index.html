@@ -38,13 +38,14 @@ window.crearClienteSupabase = function (cfg) {
 (function (raiz) {
   function crearAcceso(sb, opciones) {
     const o = Object.assign({ minutosBloqueo: 10, ahora: () => Date.now() }, opciones || {});
-    let estado = 'fuera', ultimoUso = 0;
+    let estado = 'fuera', ultimoUso = 0, metodo = '';
     const escuchas = [];
     const poner = (e) => { estado = e; if (e === 'dentro') ultimoUso = o.ahora(); escuchas.forEach((f) => f(e)); };
     const error = (e, porDefecto) => ({ ok: false, mensaje: (e && e.message) || porDefecto });
 
     return {
       estado: () => estado,
+      metodo: () => metodo,
       alCambiar: (f) => escuchas.push(f),
       puedeVer: () => estado === 'dentro',
 
@@ -58,6 +59,7 @@ window.crearClienteSupabase = function (cfg) {
           // Sin huella registrada no hay con qué desbloquear: entra para que pueda configurarla.
           try { const r = await sb.auth.passkey.list(); conQueDesbloquear = !!(r && r.data && r.data.length); } catch (e) { conQueDesbloquear = true; }
         }
+        metodo = vieneDeEnlace ? 'correo' : 'sesión guardada';
         poner(haySesion ? (vieneDeEnlace || !conQueDesbloquear ? 'dentro' : 'bloqueada') : 'fuera'); // con sesión guardada pide huella o PIN
         sb.auth.onAuthStateChange((ev, ses) => { if (!ses) poner('fuera'); });
         return estado;
@@ -66,7 +68,7 @@ window.crearClienteSupabase = function (cfg) {
       async entrarConPasskey() {
         const { data, error: e } = await sb.auth.signInWithPasskey();
         if (e || !data || !data.session) return error(e, 'No se pudo entrar con huella/Face ID');
-        poner('dentro'); return { ok: true };
+        metodo = 'huella'; poner('dentro'); return { ok: true };
       },
 
       async enviarEnlace(correo) {
@@ -82,7 +84,7 @@ window.crearClienteSupabase = function (cfg) {
         if (!/^\d{6}$/.test(pin || '')) return { ok: false, mensaje: 'El PIN tiene 6 dígitos' };
         const { data, error: e } = await sb.rpc('verificar_pin', { p_pin: pin });
         if (e) return error(e, 'Error al verificar PIN');
-        if (data.ok) { poner('dentro'); return { ok: true }; }
+        if (data.ok) { metodo = 'PIN'; poner('dentro'); return { ok: true }; }
         if (data.motivo === 'bloqueado') return { ok: false, mensaje: 'Bloqueado 15 min por 5 intentos fallidos' };
         if (data.motivo === 'sin_pin') return { ok: false, mensaje: 'No tienes PIN configurado' };
         return { ok: false, mensaje: `PIN incorrecto. Quedan ${data.restantes} intentos` };
@@ -115,7 +117,12 @@ window.crearClienteSupabase = function (cfg) {
       },
 
       bloquear() { if (estado === 'dentro') poner('bloqueada'); },
-      async salir() { await sb.auth.signOut(); poner('fuera'); },
+      // Sale siempre en pantalla, aunque el servidor tarde o falle; borra la sesión guardada del teléfono.
+      async salir() {
+        metodo = ''; poner('fuera');
+        try { await Promise.race([sb.auth.signOut({ scope: 'local' }), new Promise((r) => setTimeout(r, 3000))]); } catch (e) { /* ya está fuera */ }
+        try { const ls = raiz.localStorage; if (ls) Object.keys(ls).filter((k) => k.startsWith('sb-')).forEach((k) => ls.removeItem(k)); } catch (e) { /* sin almacenamiento */ }
+      },
     };
   }
   if (typeof module !== 'undefined') module.exports = { crearAcceso }; else raiz.crearAcceso = crearAcceso;
@@ -152,7 +159,7 @@ window.crearClienteSupabase = function (cfg) {
     document.querySelectorAll('[data-vista]').forEach((d) => { d.hidden = d.dataset.vista !== e; });
     $('acceso').hidden = e === 'dentro';
     const app = $('app');
-    if (e === 'dentro') { app.innerHTML = window.PANTALLA_APP || ''; app.hidden = false; mostrarHuellas(); }
+    if (e === 'dentro') { app.innerHTML = window.PANTALLA_APP || ''; app.hidden = false; mostrarHuellas(); const mm = $('msgApp'); if (mm) mm.textContent = 'Entraste con ' + a.metodo(); }
     else { app.innerHTML = ''; app.hidden = true; } // nada de la app existe sin login
   }
   async function mostrarHuellas() {
