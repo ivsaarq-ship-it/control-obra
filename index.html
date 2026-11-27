@@ -28,6 +28,12 @@ button { cursor:pointer; }
 .app { display:flex; flex-direction:column; min-height:100vh; max-width:560px; margin:0 auto; background:var(--fondo); }
 .top { background:var(--oscuro); color:#fff; padding:18px 16px 14px; padding-top:max(18px, env(safe-area-inset-top)); }
 .top small { opacity:.7; font-size:12px; } .top h1 { font-size:22px; margin:2px 0 0; }
+.top { position:relative; overflow:hidden; } .top > :not(.grua) { position:relative; }
+.top .grua { position:absolute; right:0; bottom:0; height:100%; width:62%; color:#fff; opacity:.24; pointer-events:none;
+  -webkit-mask-image:linear-gradient(to right, transparent, #000 35%); mask-image:linear-gradient(to right, transparent, #000 35%); }
+.top .grua .carga { animation:subeViga 7s ease-in-out infinite; }
+@keyframes subeViga { 0% { transform:translateY(0); } 60% { transform:translateY(-58px); } 75% { transform:translateY(-58px); } 100% { transform:translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .top .grua .carga { animation:none; transform:translateY(-40px); } }
 .cuerpo { flex:1; padding:14px 16px 110px; display:flex; flex-direction:column; gap:10px; }
 .c { background:var(--blanco); border-radius:14px; padding:12px 14px; box-shadow:0 1px 2px #0001; }
 .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
@@ -53,6 +59,8 @@ button { cursor:pointer; }
 .nav svg { width:22px; height:22px; }
 .menu-fab { position:fixed; right:max(18px, calc(50% - 262px)); bottom:150px; display:grid; gap:8px; z-index:5; }
 .menu-fab button { background:var(--oscuro); color:#fff; border:0; border-radius:12px; padding:14px 18px; font-weight:600; text-align:left; font-size:15px; }
+.capa-voz { position:fixed; inset:0; background:#0007; display:flex; align-items:flex-end; justify-content:center; padding:16px; z-index:20; }
+.capa-voz > .c { width:100%; max-width:520px; }
 .fila-fab { display:flex; gap:6px; justify-content:flex-end; }
 .menu-fab .gal { background:#fff; color:var(--oscuro); border:1px solid #c9c6bf; }
 .fab { position:fixed; right:max(18px, calc(50% - 262px)); bottom:84px; width:56px; height:56px; border-radius:28px; background:var(--acento); color:#fff; border:0; font-size:30px; box-shadow:0 4px 10px #0003; }
@@ -222,6 +230,41 @@ window.crearClienteSupabase = function (cfg) {
   raiz.UI = { h, num, dinero, corto, pct, hoy, fechaCorta, lunes, masDias, diasEntre, barra, nombreConcepto, aviso, icono };
 })(window);
 </script>
+<script>// id: ui.grua · tipo: componente_comun · módulo: core · deps: ninguna
+// Dibujo decorativo del encabezado: grúa pluma subiendo una viga a un edificio. Propio, sin datos del usuario.
+(function (raiz) {
+  const SVG = `<svg class="grua" viewBox="0 0 220 120" aria-hidden="true" focusable="false" preserveAspectRatio="xMaxYMax meet">
+  <defs><clipPath id="bajoPluma"><rect x="0" y="24" width="220" height="96"/></clipPath></defs>
+  <g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">
+    <!-- edificio: pisos terminados y el último en obra -->
+    <path d="M150 120V58h60v62M150 98h60M150 78h60M150 58h60M170 58v62M190 58v62"/>
+    <path d="M150 58V42M170 58V42M190 58V42M210 58V42" stroke-dasharray="3 3"/>
+    <path d="M156 106h8M176 106h8M196 106h8M156 86h8M176 86h8M196 86h8M156 66h8M176 66h8M196 66h8" stroke-width="3" opacity=".6"/>
+    <!-- torre de la grúa (celosía) -->
+    <path d="M96 120V22M104 120V22"/>
+    <path d="M96 116l8-8-8-8 8-8-8-8 8-8-8-8 8-8-8-8 8-8-8-8 8-8-8-6" stroke-width="1"/>
+    <path d="M90 120h20"/>
+    <!-- cúspide, pluma y contrapluma -->
+    <path d="M96 22l4-14 4 14M100 8L40 22M100 8l112 14"/>
+    <path d="M40 22h172M40 26h172"/>
+    <path d="M46 26l6-4 6 4 6-4 6 4 6-4 6 4 6-4 6 4M108 26l6-4 6 4 6-4 6 4 6-4 6 4 6-4 6 4 6-4 6 4 6-4 6 4 6-4 6 4 6-4 6 4 6-4 6 4" stroke-width=".9"/>
+    <rect x="42" y="26" width="16" height="10" fill="currentColor" opacity=".55"/>
+    <rect x="96" y="14" width="10" height="8" fill="currentColor" opacity=".4"/>
+    <!-- carro, cable, gancho y viga que sube -->
+    <rect x="174" y="26" width="10" height="4" fill="currentColor"/>
+    <g clip-path="url(#bajoPluma)">
+      <g class="carga">
+        <path d="M179 -40V92"/>
+        <path d="M179 92l-12 8M179 92l12 8"/>
+        <path d="M162 100h34M162 105h34M179 100v5" stroke-width="2"/>
+      </g>
+    </g>
+  </g>
+</svg>`;
+  raiz.UI = raiz.UI || {};
+  raiz.UI.grua = () => { const t = document.createElement('template'); t.innerHTML = SVG.trim(); return t.content.firstChild; };
+})(window);
+</script>
 <script>// id: core.datos · tipo: proceso_base · módulo: core · deps: acceso.servicio
 // Única puerta a la base de datos. Todo pasa por aquí (fácil de probar y de cambiar).
 (function (raiz) {
@@ -277,7 +320,7 @@ window.crearClienteSupabase = function (cfg) {
   function iniciarApp(cont, datos, opciones) {
     const ctx = { datos, obra: null, cache: {}, ir, recargar, aviso, acceso: opciones.acceso };
     let vista = 'inicio', params = {};
-    const top = h('header', { class: 'top' }), cuerpo = h('section', { class: 'cuerpo' });
+    const top = h('header', { class: 'top' }), cuerpo = h('section', { class: 'cuerpo' }), grua = raiz.UI.grua ? raiz.UI.grua() : null;
     const nav = h('nav', { class: 'nav', 'aria-label': 'Menú' }, h('div', { class: 'nav-in' }, MENU.map(([id, txt, ic]) =>
       h('button', { 'data-ir': id, onclick: () => ir(id) }, icono(ic || id), txt))));
     // Cámara: se abre directo al tocar "Foto obra" o "Foto ticket" (debe ser en el mismo toque).
@@ -286,7 +329,20 @@ window.crearClienteSupabase = function (cfg) {
     const camara = entrada(true), galeria = entrada(false);
     ctx.tomarFoto = (tipo, deGaleria) => { const el = deGaleria ? galeria : camara; el.dataset.tipo = tipo; menuFab.hidden = true; el.click(); };
     const fila = (tipo, txt) => h('div', { class: 'fila-fab' }, h('button', { onclick: () => ctx.tomarFoto(tipo) }, txt), h('button', { class: 'gal', onclick: () => ctx.tomarFoto(tipo, true) }, 'Galería'));
-    const menuFab = h('div', { class: 'menu-fab', hidden: true }, fila('avance', 'Foto obra'), fila('ticket', 'Foto ticket'));
+    // Dictado: escucha y abre el gasto lleno para confirmar.
+    ctx.dictar = () => {
+      menuFab.hidden = true;
+      if (!raiz.VOZ || !raiz.VOZ.disponible()) { aviso('Este navegador no permite dictar. Usa Chrome.'); return; }
+      const oido = h('p', { class: 'b', style: 'min-height:48px;font-size:18px' }, '…');
+      const capa = h('div', { class: 'capa-voz', role: 'dialog', 'aria-label': 'Dictar gasto' }, h('div', { class: 'c form' },
+        h('div', { class: 'lbl' }, '🎤 Te escucho…'), h('div', { class: 'mu' }, 'Ej.: "compré 20 bultos de cemento, 4,500"'), oido,
+        h('button', { class: 'btn lig', onclick: () => { raiz.VOZ.parar(); capa.remove(); } }, 'Cancelar')));
+      document.body.appendChild(capa);
+      raiz.VOZ.escuchar((t) => { oido.textContent = t; })
+        .then((t) => { capa.remove(); ir('gasto_nuevo', { dictado: t }); })
+        .catch((e) => { capa.remove(); aviso(e.message); });
+    };
+    const menuFab = h('div', { class: 'menu-fab', hidden: true }, h('div', { class: 'fila-fab' }, h('button', { onclick: () => ctx.dictar() }, '🎤 Dictar gasto')), fila('avance', 'Foto obra'), fila('ticket', 'Foto ticket'));
     const fab = h('button', { class: 'fab', 'aria-label': 'Tomar foto', onclick: () => { menuFab.hidden = !menuFab.hidden; } }, '+');
     cont.replaceChildren(h('div', { class: 'app' }, top, cuerpo), camara, galeria, menuFab, fab, nav);
 
@@ -314,7 +370,7 @@ window.crearClienteSupabase = function (cfg) {
       cuerpo.replaceChildren(h('p', { class: 'vacio' }, 'Cargando…'));
       try {
         const r = await pantalla(ctx, params);
-        top.replaceChildren(h('small', {}, r.sub || (ctx.obra ? ctx.obra.nombre : '')), h('h1', {}, r.titulo));
+        top.replaceChildren(...[grua, h('small', {}, r.sub || (ctx.obra ? ctx.obra.nombre : '')), h('h1', {}, r.titulo)].filter(Boolean));
         cuerpo.replaceChildren(...[].concat(r.contenido).flat(Infinity).filter(Boolean));
         document.dispatchEvent(new CustomEvent('pantalla', { detail: vista }));
       } catch (e) {
@@ -428,6 +484,121 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
+<script>// id: gastos.voz · tipo: servicio_externo · módulo: gastos · deps: ninguna
+// Dictado con el reconocimiento de voz del propio Chrome (gratis). Ojo: Chrome manda el audio a Google para pasarlo a texto,
+// igual que el micrófono del teclado. La app solo recibe el texto.
+(function (raiz) {
+  const Rec = () => raiz.SpeechRecognition || raiz.webkitSpeechRecognition;
+  raiz.VOZ = {
+    disponible: () => !!Rec(),
+    // Llamar dentro del toque del usuario. alParcial recibe el texto mientras hablas.
+    escuchar(alParcial) {
+      return new Promise((ok, mal) => {
+        const C = Rec(); if (!C) return mal(new Error('Este navegador no permite dictar. Usa Chrome.'));
+        const r = new C(); let final = '', parcial = '';
+        r.lang = 'es-MX'; r.interimResults = true; r.maxAlternatives = 1; r.continuous = false;
+        r.onresult = (e) => { parcial = ''; for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) final += t; else parcial += t; } if (alParcial) alParcial((final + ' ' + parcial).trim()); };
+        r.onerror = (e) => mal(new Error(e.error === 'not-allowed' ? 'Da permiso al micrófono' : e.error === 'no-speech' ? 'No te escuché' : 'No se pudo dictar (' + e.error + ')'));
+        r.onend = () => { const t = (final || parcial).trim(); t ? ok(t) : mal(new Error('No te escuché')); };
+        raiz.VOZ.parar = () => { try { r.stop(); } catch (e) { /* ya paró */ } };
+        r.start();
+      });
+    },
+    parar() {},
+  };
+})(window);
+</script>
+<script>// id: gastos.dictado · tipo: regla_calculo · módulo: gastos · deps: gastos.esquema, conceptos.esquema
+// Convierte lo que dices ("compré 20 bultos de cemento, 4,500") en un gasto sugerido.
+// Nunca guarda solo: llena el formulario y el dueño confirma.
+(function (raiz) {
+  const U = { cero: 0, un: 1, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11, doce: 12, trece: 13, catorce: 14, quince: 15,
+    dieciseis: 16, diecisiete: 17, dieciocho: 18, diecinueve: 19, veinte: 20, veintiun: 21, veintiuno: 21, veintidos: 22, veintitres: 23, veinticuatro: 24, veinticinco: 25, veintiseis: 26,
+    veintisiete: 27, veintiocho: 28, veintinueve: 29, treinta: 30, cuarenta: 40, cincuenta: 50, sesenta: 60, setenta: 70, ochenta: 80, noventa: 90, cien: 100, ciento: 100,
+    doscientos: 200, doscientas: 200, trescientos: 300, trescientas: 300, cuatrocientos: 400, cuatrocientas: 400, quinientos: 500, quinientas: 500, seiscientos: 600, seiscientas: 600,
+    setecientos: 700, setecientas: 700, ochocientos: 800, ochocientas: 800, novecientos: 900, novecientas: 900 };
+  const sinAcentos = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const esCifra = (t) => /^\d+(?:[.,]\d+)*$/.test(t);
+  const cifra = (t) => { // "4,500" "4.500" "4500" "4,500.50" "1.5"
+    if (/^\d{1,3}([.,]\d{3})+([.,]\d{1,2})?$/.test(t)) { const dec = t.match(/[.,](\d{1,2})$/); const ent = (dec ? t.slice(0, -dec[0].length) : t).replace(/[.,]/g, ''); return Number(ent + (dec ? '.' + dec[1] : '')); }
+    return Number(t.replace(',', '.'));
+  };
+  const esNumero = (t) => esCifra(t) || t in U || t === 'mil' || t === 'millon' || t === 'millones';
+
+  // Junta palabras y cifras seguidas en un solo número: "4 mil 500", "cuatro mil quinientos", "veinte".
+  function leerNumeros(texto) {
+    const toks = sinAcentos(texto.toLowerCase()).replace(/\$\s*/g, '$').split(/\s+/).filter(Boolean);
+    const salida = []; let i = 0;
+    while (i < toks.length) {
+      const pesoAntes = toks[i].startsWith('$'); let t = toks[i].replace(/^\$/, '').replace(/[,;:]$/, '');
+      if (!esNumero(t)) { salida.push({ txt: toks[i] }); i++; continue; }
+      let total = 0, actual = 0, ini = i, ultimo = i;
+      while (i < toks.length) {
+        t = toks[i].replace(/^\$/, ''); const coma = /[,;:.]$/.test(t) && !esCifra(t); t = t.replace(/[,;:.]$/, '');
+        if (esCifra(t)) actual += cifra(t);
+        else if (t in U) actual += U[t];
+        else if (t === 'mil') { total += (actual || 1) * 1000; actual = 0; }
+        else if (t === 'millon' || t === 'millones') { total += (actual || 1) * 1e6; actual = 0; }
+        else if (t === 'y' && i + 1 < toks.length && toks[i + 1] in U && i > ini) { i++; continue; }
+        else break;
+        ultimo = i; i++;
+        if (coma || /,$/.test(toks[ultimo])) break;
+      }
+      const siguiente = (toks[i] || '').replace(/[,.]$/, '');
+      salida.push({ num: total + actual, pesos: pesoAntes || /^pesos?$/.test(siguiente) || siguiente === 'varos', txt: toks.slice(ini, ultimo + 1).join(' ') });
+    }
+    return salida;
+  }
+
+  const REGLAS_TIPO = [[/flete|acarreo|transporte/, /flete/i], [/asesor|consultor|ingeniero|calculo/, /asesor/i], [/renta|alquiler|maquinaria|revolvedora|andamio|equipo/, /equipo/i], [/subcontrat|contratista/, /subcontrat/i], [/compr|material|ferreteri|tlapaleri|cemento|varilla|block|arena|grava/, /compra/i]];
+  const PALABRAS_VACIAS = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'en', 'para', 'por', 'con', 'y', 'un', 'una', 'a', 'al', 'que', 'se', 'mi']);
+
+  function interpretarDictado(texto, contexto) {
+    const c = contexto || {}, original = String(texto || '').trim();
+    const t = sinAcentos(original.toLowerCase());
+    const piezas = leerNumeros(original);
+    const nums = piezas.filter((x) => 'num' in x);
+    const conPesos = nums.filter((x) => x.pesos);
+    const montoPieza = conPesos[conPesos.length - 1] || nums[nums.length - 1] || null;
+    const monto = montoPieza ? Math.round(montoPieza.num * 100) / 100 : null;
+
+    const estado = /\b(debo|a credito|pendiente|por pagar|fiado|apart|comprometi|anticipo pendiente)/.test(t) ? 'comprometido' : 'pagado';
+    let fecha = c.hoy || new Date().toISOString().slice(0, 10);
+    const menosDias = /\bantier|anteayer\b/.test(t) ? 2 : /\bayer\b/.test(t) ? 1 : 0;
+    if (menosDias) { const d = new Date(fecha + 'T12:00:00'); d.setDate(d.getDate() - menosDias); fecha = d.toISOString().slice(0, 10); }
+
+    let tipo_id = null;
+    for (const [dice, lista] of REGLAS_TIPO) { if (dice.test(t)) { const x = (c.tipos || []).find((y) => lista.test(y.valor)); if (x) { tipo_id = x.id; break; } } }
+
+    const prov = t.match(/\b(?:en|con el proveedor|proveedor)\s+((?:la |el |los )?(?:ferreteria|tlapaleria|materiales|casa de materiales|home depot|comex|deposito|madereria|vidrieria|aceros|concretera|bodega|tienda)[a-z ]{0,30}?)(?=,|\.|\s+\$?\d|\bpor\b|\bpara\b|\bde\s+\d|\ba credito\b|\bayer\b|$)/);
+    const proveedor = prov ? prov[1].trim().replace(/\b\w/g, (l) => l.toUpperCase()) : null;
+
+    // Concepto: el que comparte más palabras con lo dicho (mín. una palabra de 4+ letras).
+    const palabras = new Set(t.split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !PALABRAS_VACIAS.has(w)));
+    let concepto_id = null, mejor = 0;
+    for (const k of c.conceptos || []) {
+      const ws = sinAcentos(String(k.concepto || '').toLowerCase()).split(/[^a-z0-9]+/).filter((w) => w.length >= 4);
+      const pts = ws.filter((w) => palabras.has(w) || [...palabras].some((p) => p.length >= 5 && (p.startsWith(w.slice(0, 5)) || w.startsWith(p.slice(0, 5))))).length;
+      if (pts > mejor) { mejor = pts; concepto_id = k.id; }
+    }
+
+    // Descripción: lo dicho sin el verbo inicial, sin el monto ni las palabras de estado/fecha.
+    let nota = original;
+    if (montoPieza) {
+      const esc = montoPieza.txt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+');
+      const conAcentos = esc.replace(/a/g, '[aá]').replace(/e/g, '[eé]').replace(/i/g, '[ií]').replace(/o/g, '[oó]').replace(/u/g, '[uú]');
+      nota = nota.replace(new RegExp('\\$?\\s*' + conAcentos + '(\\s*(pesos?|varos))?', 'i'), ' ');
+    }
+    nota = nota.replace(/^\s*(hoy |ayer |antier )?(compr[eé]|pagu[eé]|gast[eé]|se compr[oó]|se pag[oó]|compramos|pagamos)(?![a-záéíóúñ])/i, '')
+      .replace(/\b(a cr[eé]dito|por pagar|pendiente|ayer|antier|hoy)\b/gi, '').replace(/\s*,\s*(,\s*)*/g, ', ').replace(/\s{2,}/g, ' ').replace(/^[\s,.]+|[\s,.]+$/g, '');
+    if (prov) nota = nota.replace(new RegExp('\\b(en|con el proveedor|proveedor)\\s+' + prov[1].trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/e/g, '[eé]').replace(/i/g, '[ií]').replace(/a/g, '[aá]'), 'i'), '').replace(/^[\s,.]+|[\s,.]+$/g, '').replace(/\s{2,}/g, ' ');
+    nota = nota ? nota[0].toUpperCase() + nota.slice(1) : null;
+
+    return { monto, estado, fecha, tipo_id, proveedor, concepto_id, nota, texto: original };
+  }
+  if (typeof module !== 'undefined') module.exports = { interpretarDictado, leerNumeros }; else raiz.interpretarDictado = interpretarDictado;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
 <script>// id: gastos.pantalla · tipo: pantalla · módulo: gastos · deps: gastos.esquema, conceptos.esquema
 (function (raiz) {
   const { h, num, dinero, fechaCorta, nombreConcepto, hoy } = raiz.UI;
@@ -444,16 +615,17 @@ window.crearClienteSupabase = function (cfg) {
         g.estado === 'pagado' ? h('span', { class: 'tag p' }, 'Pagado')
           : h('button', { class: 'tag c2', style: 'border:0', title: 'Marcar como pagado', onclick: async () => { await ctx.datos.cambiar('gastos', g.id, { estado: 'pagado' }); ctx.aviso('Marcado como pagado'); ctx.recargar(); } }, 'Comprometido')));
     return { titulo: 'Gastos', contenido: [
-      h('button', { class: 'btn', onclick: () => ctx.ir('gasto_nuevo') }, '+ Nuevo gasto'),
+      h('div', { class: 'grid2' }, h('button', { class: 'btn', onclick: () => ctx.ir('gasto_nuevo') }, '+ Nuevo gasto'), h('button', { class: 'btn o2', onclick: () => ctx.dictar() }, '🎤 Dictar gasto')),
       h('div', { class: 'tabs' }, tab('todos', 'Todos'), tab('comprometido', 'Comprometido'), tab('pagado', 'Pagado')),
       h('div', { class: 'grid2' }, h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Comprometido'), h('div', { class: 'b nar' }, dinero(suma('comprometido')))),
         h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Pagado'), h('div', { class: 'b verde' }, dinero(suma('pagado'))))),
       vis.length ? vis.map(fila) : h('p', { class: 'vacio' }, 'Sin gastos todavía.')] };
   };
 
-  raiz.PANTALLAS.gasto_nuevo = async (ctx) => {
+  raiz.PANTALLAS.gasto_nuevo = async (ctx, p) => {
     const [cs, tipos] = await Promise.all([ctx.conceptos(), ctx.listas('tipo_gasto')]);
-    let tipo = tipos[0] ? tipos[0].id : null, estado = 'pagado';
+    const dic = p && p.dictado && raiz.interpretarDictado ? raiz.interpretarDictado(p.dictado, { conceptos: cs, tipos, hoy: hoy() }) : null;
+    let tipo = (dic && dic.tipo_id) || (tipos[0] ? tipos[0].id : null), estado = (dic && dic.estado) || 'pagado';
     const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Tipo' }, tipos.map((t) => h('button', { type: 'button', class: t.id === tipo ? 'on' : '', onclick: (e) => { tipo = t.id; chips.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === e.currentTarget)); } }, t.valor)));
     const est = h('div', { class: 'tabs' }, ['comprometido', 'pagado'].map((x) => h('button', { type: 'button', class: x === estado ? 'on' : '', onclick: (e) => { estado = x; est.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === e.currentTarget)); } }, x === 'pagado' ? 'Pagado' : 'Comprometido')));
     const msg = h('p', { class: 'mu', role: 'status' });
@@ -466,15 +638,18 @@ window.crearClienteSupabase = function (cfg) {
         ctx.aviso('Gasto guardado'); ctx.ir('gastos');
       } catch (e) { msg.textContent = 'No se guardó: ' + e.message; }
     } },
-      h('label', {}, 'Monto', h('input', { name: 'monto', type: 'number', step: '0.01', min: '0', inputMode: 'decimal', required: true, style: 'font-size:22px;font-weight:700' })),
-      h('label', {}, 'Descripción', h('input', { name: 'nota', placeholder: 'Ej. Cemento 120 bultos' })),
+      dic ? h('div', { class: 'c', style: 'background:#fff7ec' }, h('div', { class: 'mu' }, 'Escuché:'), h('div', { class: 'b' }, '«' + dic.texto + '»'),
+        h('div', { class: 'mu' }, dic.monto ? 'Revisa y toca Guardar.' : 'No escuché el monto: escríbelo.'), h('button', { type: 'button', class: 'btn lig', onclick: () => ctx.dictar() }, '🎤 Repetir')) : null,
+      h('label', {}, 'Monto', h('input', { name: 'monto', type: 'number', step: '0.01', min: '0', inputMode: 'decimal', required: true, value: dic && dic.monto ? String(dic.monto) : '', style: 'font-size:22px;font-weight:700' })),
+      h('label', {}, 'Descripción', h('input', { name: 'nota', placeholder: 'Ej. Cemento 120 bultos', value: (dic && dic.nota) || '' })),
       h('div', { class: 'lbl' }, 'Tipo'), chips,
-      h('label', {}, 'Concepto', h('select', { name: 'concepto_id' }, h('option', { value: '' }, 'Sin concepto (gasto general)'), cs.map((c) => h('option', { value: c.id }, nombreConcepto(c))))),
-      h('label', {}, 'Fecha', h('input', { name: 'fecha', type: 'date', value: hoy() })),
+      h('label', {}, 'Concepto', h('select', { name: 'concepto_id' }, h('option', { value: '' }, 'Sin concepto (gasto general)'), cs.map((c) => h('option', { value: c.id, selected: !!dic && dic.concepto_id === c.id }, nombreConcepto(c))))),
+      h('label', {}, 'Fecha', h('input', { name: 'fecha', type: 'date', value: (dic && dic.fecha) || hoy() })),
       est,
-      h('div', { class: 'grid2' }, h('label', {}, 'Proveedor', h('input', { name: 'proveedor' })), h('label', {}, 'Comprobante', h('input', { name: 'comprobante', placeholder: 'Folio o enlace' }))),
+      h('div', { class: 'grid2' }, h('label', {}, 'Proveedor', h('input', { name: 'proveedor', value: (dic && dic.proveedor) || '' })), h('label', {}, 'Comprobante', h('input', { name: 'comprobante', placeholder: 'Folio o enlace' }))),
       msg, h('button', { class: 'btn', type: 'submit' }, 'Guardar'), h('button', { class: 'btn lig', type: 'button', onclick: () => ctx.ir('gastos') }, 'Cancelar'));
-    return { titulo: 'Nuevo gasto', sub: 'Gastos', contenido: form };
+    if (dic && !dic.monto) setTimeout(() => { const m = form.querySelector('[name=monto]'); if (m) m.focus(); }, 50);
+    return { titulo: 'Nuevo gasto', sub: dic ? 'Dictado' : 'Gastos', contenido: form };
   };
 })(window);
 </script>
@@ -1115,7 +1290,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="0.5.1-20261127193121">
+</head><body data-version="0.6.0-20261127194553">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <section id="acceso">
   <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
