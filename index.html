@@ -98,7 +98,7 @@ window.crearClienteSupabase = function (cfg) {
 };
 </script>
 <script>// id: acceso.reglas · tipo: regla_calculo · módulo: acceso · deps: acceso.servicio
-// Estados: 'fuera' (sin sesión) → passkey o enlace por correo.
+// Estados: 'fuera' (sin sesión) → passkey o enlace por correo (una sola vez por celular; la sesión queda guardada).
 //          'bloqueada' (hay sesión pero la app se bloqueó) → passkey o PIN.
 //          'dentro' → se ve la app. Ninguna pantalla sin 'dentro'.
 (function (raiz) {
@@ -114,7 +114,9 @@ window.crearClienteSupabase = function (cfg) {
     const CLAVE = 'ultimoUso';
     const leerUso = () => { try { return Number(o.almacen && o.almacen.getItem(CLAVE)) || 0; } catch (e) { return 0; } };
     const guardarUso = (t) => { try { if (o.almacen) { if (t) o.almacen.setItem(CLAVE, String(t)); else o.almacen.removeItem(CLAVE); } } catch (e) { /* sin almacenamiento */ } };
-    const vencido = (t) => o.ahora() - t > o.minutosBloqueo * 60000;
+    // Bloqueo con huella/PIN: apagado por defecto (dueño: "déjalo libre con la opción de poderle poner contraseña más adelante").
+    const pideClave = () => { if (typeof o.pedirClave === 'function') return !!o.pedirClave(); try { return !!o.almacen && o.almacen.getItem('pedirClave') === '1'; } catch (e) { return false; } };
+    const vencido = (t) => pideClave() && o.ahora() - t > o.minutosBloqueo * 60000;
     let estado = 'fuera', ultimoUso = 0, metodo = '';
     const escuchas = [];
     const poner = (e) => { estado = e; if (e === 'dentro') { ultimoUso = o.ahora(); guardarUso(ultimoUso); } escuchas.forEach((f) => f(e)); };
@@ -125,6 +127,8 @@ window.crearClienteSupabase = function (cfg) {
       metodo: () => metodo,
       alCambiar: (f) => escuchas.push(f),
       puedeVer: () => estado === 'dentro',
+      pideClave,
+      ponerPedirClave(si) { try { if (o.almacen) { if (si) o.almacen.setItem('pedirClave', '1'); else o.almacen.removeItem('pedirClave'); } } catch (e) { /* sin almacenamiento */ } if (estado === 'dentro') { ultimoUso = o.ahora(); guardarUso(ultimoUso); } },
 
       // urlActual: si viene del enlace del correo, entra directo.
       async iniciar(urlActual) {
@@ -132,7 +136,7 @@ window.crearClienteSupabase = function (cfg) {
         const { data } = await sb.auth.getSession();
         const haySesion = !!(data && data.session);
         let conQueDesbloquear = true;
-        const usoReciente = haySesion && leerUso() > 0 && !vencido(leerUso());
+        const usoReciente = haySesion && (!pideClave() || (leerUso() > 0 && !vencido(leerUso())));
         if (haySesion && !vieneDeEnlace && !usoReciente && sb.auth.passkey && sb.auth.passkey.list) {
           // Sin huella registrada no hay con qué desbloquear: entra para que pueda configurarla.
           try { const r = await sb.auth.passkey.list(); conQueDesbloquear = !!(r && r.data && r.data.length); } catch (e) { conQueDesbloquear = true; }
@@ -200,7 +204,7 @@ window.crearClienteSupabase = function (cfg) {
         return estado;
       },
 
-      bloquear() { if (estado === 'dentro') poner('bloqueada'); },
+      bloquear() { if (estado === 'dentro' && pideClave()) poner('bloqueada'); },
       // Sale siempre en pantalla, aunque el servidor tarde o falle; borra la sesión guardada del teléfono.
       async salir() {
         metodo = ''; poner('fuera'); guardarUso(0);
@@ -1599,7 +1603,9 @@ window.crearClienteSupabase = function (cfg) {
         h('button', { class: 'btn lig', id: 'btnProbarAviso', onclick: async (e) => { const b = e.currentTarget; b.disabled = true;
           try { await raiz.AVISO.probar(); ctx.aviso('Aviso enviado: debe llegarte en segundos'); } catch (err) { ctx.aviso('No se pudo: ' + err.message); } b.disabled = false; } }, 'Probar aviso')) : null,
       h('div', { class: 'cap' }, 'Seguridad'),
-      h('div', { class: 'c form' }, h('p', { id: 'huellas', class: 'mu', style: 'margin:0' }),
+      h('label', { class: 'c row', style: 'gap:10px' }, h('span', {}, h('div', { class: 'lbl' }, 'Pedir huella o PIN'), h('div', { class: 'mu' }, 'Al abrir después de 15 min sin usarla. Apagado: abre directo.')),
+        h('input', { type: 'checkbox', id: 'chkClave', style: 'width:26px;height:26px', checked: !!(ctx.acceso && ctx.acceso.pideClave()), onchange: (e) => { ctx.acceso.ponerPedirClave(e.target.checked); const f = document.getElementById('formClave'); if (f) f.hidden = !e.target.checked; ctx.aviso(e.target.checked ? 'Listo: pedirá huella o PIN tras 15 min sin uso' : 'Listo: abre directo, sin contraseña'); } })),
+      h('div', { class: 'c form', id: 'formClave', hidden: !(ctx.acceso && ctx.acceso.pideClave()) }, h('p', { id: 'huellas', class: 'mu', style: 'margin:0' }),
         h('button', { id: 'btnRegHuella', class: 'btn' }, 'Registrar huella / Face ID'),
         h('input', { id: 'pinNuevo', inputMode: 'numeric', maxLength: 6, placeholder: 'PIN nuevo de 6 dígitos', autocomplete: 'off', 'aria-label': 'PIN nuevo' }),
         h('button', { id: 'btnFijarPin', class: 'btn o2' }, 'Guardar PIN'), h('p', { id: 'msgApp', class: 'mu', role: 'status', style: 'margin:0' })),
@@ -1607,7 +1613,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="1.1.0-20261127201455">
+</head><body data-version="1.2.0-20261127203405">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <section id="acceso">
   <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
@@ -1643,8 +1649,8 @@ window.crearClienteSupabase = function (cfg) {
     const app = $('app');
     if (e === 'dentro') {
       app.hidden = false;
-      if (!dentroAntes) { window.iniciarApp(app, datos, { acceso: a }).then(() => window.UI.aviso('Entraste con ' + a.metodo())); }
-      else window.UI.aviso('Entraste con ' + a.metodo());
+      if (!dentroAntes) { window.iniciarApp(app, datos, { acceso: a }).then(() => { if (a.metodo() !== 'sesión guardada') window.UI.aviso('Entraste con ' + a.metodo()); }); }
+      else if (a.metodo() !== 'sesión guardada') window.UI.aviso('Entraste con ' + a.metodo());
       dentroAntes = true;
     } else if (e === 'fuera') { app.replaceChildren(); app.hidden = true; dentroAntes = false; } // nada de la app existe sin login
     else { app.hidden = true; } // bloqueada: se oculta; al desbloquear vuelve donde estaba
