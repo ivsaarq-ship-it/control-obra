@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Control de obra</title>
+<style>/* id: ui.estilos · tipo: componente_comun · módulo: ui · deps: ninguna */
+:root { --fondo:#f6f5f2; --texto:#1d1d1b; --borde:#c9c6bf; --acento:#1f5f8b; }
+@media (prefers-color-scheme: dark) { :root { --fondo:#161616; --texto:#eceae6; --borde:#444; --acento:#6aa8d8; } }
+* { box-sizing:border-box } body { margin:0; font:16px/1.4 system-ui,sans-serif; background:var(--fondo); color:var(--texto); }
+.acceso { max-width:360px; margin:12vh auto; padding:0 16px; display:grid; gap:12px; }
+.acceso div { display:grid; gap:10px; } .acceso h1 { font-size:22px; margin:0 0 8px; }
+input, button { font:inherit; padding:12px; border-radius:8px; border:1px solid var(--borde); background:transparent; color:inherit; }
+button.principal { background:var(--acento); color:#fff; border:0; } button.ligero { border:0; opacity:.7; }
+.o { text-align:center; opacity:.6; margin:4px 0; } #msg { min-height:1.4em; } #app { padding:16px; }
+[hidden] { display:none !important; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.js"></script>
+<script>// id: core.configuracion · tipo: parametro_negocio · módulo: core · deps: ninguna
+// Valores del proyecto Supabase. La clave "anon" es pública por diseño; la seguridad real la da RLS.
+window.CONFIG = {
+  supabaseUrl: 'https://idqajsltwhhpfhfbvcfm.supabase.co',
+  supabaseAnonKey: 'sb_publishable_5TKGusExaCXy3lBD4C-scg_rTn0rZhA',
+  minutosBloqueoInactividad: 10,   // tras este tiempo sin uso, pide passkey o PIN
+};
+</script>
+<script>// id: acceso.servicio · tipo: servicio_externo · módulo: acceso · deps: core.configuracion
+// Requiere @supabase/supabase-js >= 2.105.0 (passkey experimental).
+window.crearClienteSupabase = function (cfg) {
+  return window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
+    auth: { experimental: { passkey: true }, persistSession: true, detectSessionInUrl: true },
+  });
+};
+</script>
+<script>// id: acceso.reglas · tipo: regla_calculo · módulo: acceso · deps: acceso.servicio
+// Estados: 'fuera' (sin sesión) → passkey o enlace por correo.
+//          'bloqueada' (hay sesión pero la app se bloqueó) → passkey o PIN.
+//          'dentro' → se ve la app. Ninguna pantalla sin 'dentro'.
+(function (raiz) {
+  function crearAcceso(sb, opciones) {
+    const o = Object.assign({ minutosBloqueo: 10, ahora: () => Date.now() }, opciones || {});
+    let estado = 'fuera', ultimoUso = 0;
+    const escuchas = [];
+    const poner = (e) => { estado = e; if (e === 'dentro') ultimoUso = o.ahora(); escuchas.forEach((f) => f(e)); };
+    const error = (e, porDefecto) => ({ ok: false, mensaje: (e && e.message) || porDefecto });
+
+    return {
+      estado: () => estado,
+      alCambiar: (f) => escuchas.push(f),
+      puedeVer: () => estado === 'dentro',
+
+      // urlActual: si viene del enlace del correo, entra directo.
+      async iniciar(urlActual) {
+        const vieneDeEnlace = /access_token=|[?&]code=/.test(urlActual || '');
+        const { data } = await sb.auth.getSession();
+        const haySesion = !!(data && data.session);
+        poner(haySesion ? (vieneDeEnlace ? 'dentro' : 'bloqueada') : 'fuera'); // al abrir con sesión guardada pide passkey o PIN
+        sb.auth.onAuthStateChange((ev, ses) => { if (!ses) poner('fuera'); });
+        return estado;
+      },
+
+      async entrarConPasskey() {
+        const { data, error: e } = await sb.auth.signInWithPasskey();
+        if (e || !data || !data.session) return error(e, 'No se pudo entrar con huella/Face ID');
+        poner('dentro'); return { ok: true };
+      },
+
+      async enviarEnlace(correo) {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo || '')) return { ok: false, mensaje: 'Correo no válido' };
+        const { error: e } = await sb.auth.signInWithOtp({
+          email: correo, options: { shouldCreateUser: false, emailRedirectTo: raiz.location ? raiz.location.href.split('#')[0] : undefined },
+        });
+        return e ? error(e, 'No se pudo enviar el enlace') : { ok: true, mensaje: 'Revisa tu correo' };
+      },
+
+      async entrarConPin(pin) {
+        if (estado !== 'bloqueada') return { ok: false, mensaje: 'El PIN solo desbloquea; primero entra con huella o correo' };
+        if (!/^\d{6}$/.test(pin || '')) return { ok: false, mensaje: 'El PIN tiene 6 dígitos' };
+        const { data, error: e } = await sb.rpc('verificar_pin', { p_pin: pin });
+        if (e) return error(e, 'Error al verificar PIN');
+        if (data.ok) { poner('dentro'); return { ok: true }; }
+        if (data.motivo === 'bloqueado') return { ok: false, mensaje: 'Bloqueado 15 min por 5 intentos fallidos' };
+        if (data.motivo === 'sin_pin') return { ok: false, mensaje: 'No tienes PIN configurado' };
+        return { ok: false, mensaje: `PIN incorrecto. Quedan ${data.restantes} intentos` };
+      },
+
+      async registrarPasskey() {
+        if (estado !== 'dentro') return { ok: false, mensaje: 'Primero entra' };
+        const { error: e } = await sb.auth.registerPasskey();
+        return e ? error(e, 'No se pudo registrar') : { ok: true };
+      },
+
+      async fijarPin(pin) {
+        if (estado !== 'dentro') return { ok: false, mensaje: 'Primero entra' };
+        if (!/^\d{6}$/.test(pin || '')) return { ok: false, mensaje: 'El PIN tiene 6 dígitos' };
+        const { error: e } = await sb.rpc('fijar_pin', { p_pin: pin });
+        return e ? error(e, 'No se pudo guardar el PIN') : { ok: true };
+      },
+
+      // Llamar en cada interacción; si pasó el tiempo, bloquea.
+      revisarInactividad() {
+        if (estado === 'dentro' && o.ahora() - ultimoUso > o.minutosBloqueo * 60000) poner('bloqueada');
+        else if (estado === 'dentro') ultimoUso = o.ahora();
+        return estado;
+      },
+
+      bloquear() { if (estado === 'dentro') poner('bloqueada'); },
+      async salir() { await sb.auth.signOut(); poner('fuera'); },
+    };
+  }
+  if (typeof module !== 'undefined') module.exports = { crearAcceso }; else raiz.crearAcceso = crearAcceso;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>window.PANTALLA_APP = '<h2>Obra</h2><p>Módulos en construcción.</p><button onclick="ACCESO.salir()">Salir</button>';</script>
+</head><body data-version="0.1.0">
+<!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas -->
+<section id="acceso" class="acceso">
+  <h1>Control de obra</h1>
+  <div data-vista="fuera">
+    <button id="btnPasskey" class="principal">Entrar con huella / Face ID</button>
+    <p class="o">o recibe un enlace</p>
+    <input id="correo" type="email" autocomplete="username webauthn" placeholder="tu correo">
+    <button id="btnEnlace">Enviar enlace al correo</button>
+  </div>
+  <div data-vista="bloqueada">
+    <button id="btnPasskey2" class="principal">Desbloquear con huella / Face ID</button>
+    <p class="o">o con tu PIN</p>
+    <input id="pin" inputmode="numeric" maxlength="6" placeholder="PIN de 6 dígitos" autocomplete="off">
+    <button id="btnPin">Entrar con PIN</button>
+    <button id="btnSalir2" class="ligero">Cerrar sesión</button>
+  </div>
+  <p id="msg" role="status"></p>
+</section>
+<main id="app" hidden></main>
+<script>
+(function () {
+  const sb = window.crearClienteSupabase(window.CONFIG);
+  const a = window.crearAcceso(sb, { minutosBloqueo: window.CONFIG.minutosBloqueoInactividad });
+  const $ = (id) => document.getElementById(id);
+  const msg = (t) => { $('msg').textContent = t || ''; };
+  function pintar(e) {
+    document.querySelectorAll('[data-vista]').forEach((d) => { d.hidden = d.dataset.vista !== e; });
+    $('acceso').hidden = e === 'dentro';
+    const app = $('app');
+    if (e === 'dentro') { app.innerHTML = window.PANTALLA_APP || ''; app.hidden = false; }
+    else { app.innerHTML = ''; app.hidden = true; } // nada de la app existe sin login
+  }
+  a.alCambiar(pintar);
+  const r = (p) => p.then((x) => msg(x.ok ? (x.mensaje || '') : x.mensaje));
+  $('btnPasskey').onclick = $('btnPasskey2').onclick = () => r(a.entrarConPasskey());
+  $('btnEnlace').onclick = () => r(a.enviarEnlace($('correo').value.trim()));
+  $('btnPin').onclick = () => { r(a.entrarConPin($('pin').value)); $('pin').value = ''; };
+  $('btnSalir2').onclick = () => a.salir();
+  ['click', 'keydown', 'touchstart'].forEach((ev) => document.addEventListener(ev, () => a.revisarInactividad(), true));
+  document.addEventListener('visibilitychange', () => { if (document.hidden) a.bloquear(); });
+  a.iniciar(location.href).then((e) => { pintar(e); if (/access_token=|[?&]code=/.test(location.href)) history.replaceState(null, '', location.pathname); });
+  window.ACCESO = a;
+})();
+</script>
+
+</body></html>
