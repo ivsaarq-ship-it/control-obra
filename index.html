@@ -67,7 +67,7 @@ th { color:var(--tenue); font-weight:600; font-size:11px; } td:first-child, th:f
 window.CONFIG = {
   supabaseUrl: 'https://idqajsltwhhpfhfbvcfm.supabase.co',
   supabaseAnonKey: 'sb_publishable_5TKGusExaCXy3lBD4C-scg_rTn0rZhA',
-  minutosBloqueoInactividad: 10,   // tras este tiempo sin uso, pide passkey o PIN
+  minutosBloqueoInactividad: 15,   // 15 min sin usar la app (abierta o cerrada): pide huella o PIN
 };
 </script>
 <script>// id: acceso.servicio · tipo: servicio_externo · módulo: acceso · deps: core.configuracion
@@ -84,10 +84,14 @@ window.crearClienteSupabase = function (cfg) {
 //          'dentro' → se ve la app. Ninguna pantalla sin 'dentro'.
 (function (raiz) {
   function crearAcceso(sb, opciones) {
-    const o = Object.assign({ minutosBloqueo: 10, ahora: () => Date.now() }, opciones || {});
+    const o = Object.assign({ minutosBloqueo: 15, ahora: () => Date.now(), almacen: (() => { try { return raiz.localStorage; } catch (e) { return null; } })() }, opciones || {});
+    const CLAVE = 'ultimoUso';
+    const leerUso = () => { try { return Number(o.almacen && o.almacen.getItem(CLAVE)) || 0; } catch (e) { return 0; } };
+    const guardarUso = (t) => { try { if (o.almacen) { if (t) o.almacen.setItem(CLAVE, String(t)); else o.almacen.removeItem(CLAVE); } } catch (e) { /* sin almacenamiento */ } };
+    const vencido = (t) => o.ahora() - t > o.minutosBloqueo * 60000;
     let estado = 'fuera', ultimoUso = 0, metodo = '';
     const escuchas = [];
-    const poner = (e) => { estado = e; if (e === 'dentro') ultimoUso = o.ahora(); escuchas.forEach((f) => f(e)); };
+    const poner = (e) => { estado = e; if (e === 'dentro') { ultimoUso = o.ahora(); guardarUso(ultimoUso); } escuchas.forEach((f) => f(e)); };
     const error = (e, porDefecto) => ({ ok: false, mensaje: (e && e.message) || porDefecto });
 
     return {
@@ -102,12 +106,13 @@ window.crearClienteSupabase = function (cfg) {
         const { data } = await sb.auth.getSession();
         const haySesion = !!(data && data.session);
         let conQueDesbloquear = true;
-        if (haySesion && !vieneDeEnlace && sb.auth.passkey && sb.auth.passkey.list) {
+        const usoReciente = haySesion && leerUso() > 0 && !vencido(leerUso());
+        if (haySesion && !vieneDeEnlace && !usoReciente && sb.auth.passkey && sb.auth.passkey.list) {
           // Sin huella registrada no hay con qué desbloquear: entra para que pueda configurarla.
           try { const r = await sb.auth.passkey.list(); conQueDesbloquear = !!(r && r.data && r.data.length); } catch (e) { conQueDesbloquear = true; }
         }
         metodo = vieneDeEnlace ? 'correo' : 'sesión guardada';
-        poner(haySesion ? (vieneDeEnlace || !conQueDesbloquear ? 'dentro' : 'bloqueada') : 'fuera'); // con sesión guardada pide huella o PIN
+        poner(haySesion ? (vieneDeEnlace || usoReciente || !conQueDesbloquear ? 'dentro' : 'bloqueada') : 'fuera'); // sesión guardada: pide huella o PIN solo tras el tiempo sin uso
         sb.auth.onAuthStateChange((ev, ses) => { if (!ses) poner('fuera'); });
         return estado;
       },
@@ -158,15 +163,15 @@ window.crearClienteSupabase = function (cfg) {
 
       // Llamar en cada interacción; si pasó el tiempo, bloquea.
       revisarInactividad() {
-        if (estado === 'dentro' && o.ahora() - ultimoUso > o.minutosBloqueo * 60000) poner('bloqueada');
-        else if (estado === 'dentro') ultimoUso = o.ahora();
+        if (estado === 'dentro' && vencido(ultimoUso)) poner('bloqueada');
+        else if (estado === 'dentro') { ultimoUso = o.ahora(); guardarUso(ultimoUso); }
         return estado;
       },
 
       bloquear() { if (estado === 'dentro') poner('bloqueada'); },
       // Sale siempre en pantalla, aunque el servidor tarde o falle; borra la sesión guardada del teléfono.
       async salir() {
-        metodo = ''; poner('fuera');
+        metodo = ''; poner('fuera'); guardarUso(0);
         try { await Promise.race([sb.auth.signOut({ scope: 'local' }), new Promise((r) => setTimeout(r, 3000))]); } catch (e) { /* ya está fuera */ }
         try { const ls = raiz.localStorage; if (ls) Object.keys(ls).filter((k) => k.startsWith('sb-')).forEach((k) => ls.removeItem(k)); } catch (e) { /* sin almacenamiento */ }
       },
@@ -253,7 +258,7 @@ window.crearClienteSupabase = function (cfg) {
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script>// id: core.app · tipo: proceso_base · módulo: core · deps: core.datos, ui.ayudas, todas las pantallas
-// Estructura: encabezado, contenido, menú inferior y botón +. Solo se arma después del login.
+// Estructura: encabezado, contenido, menú inferior y botón + (fotos de avance o de tickets). Solo se arma después del login.
 (function (raiz) {
   const { h, aviso, icono } = raiz.UI;
   raiz.PANTALLAS = raiz.PANTALLAS || {};
@@ -266,11 +271,9 @@ window.crearClienteSupabase = function (cfg) {
     const nav = h('nav', { class: 'nav', 'aria-label': 'Menú' }, h('div', { class: 'nav-in' }, MENU.map(([id, txt, ic]) =>
       h('button', { 'data-ir': id, onclick: () => ir(id) }, icono(ic || id), txt))));
     const menuFab = h('div', { class: 'menu-fab', hidden: true },
-      h('button', { onclick: () => ir('gasto_nuevo') }, '+ Gasto'),
-      h('button', { onclick: () => ir('avances', { registrar: true }) }, '+ Avance'),
-      h('button', { onclick: () => ir('sueldos') }, '+ Sueldo'),
-      h('button', { onclick: () => ir('fotos', { agregar: true }) }, '+ Foto'));
-    const fab = h('button', { class: 'fab', 'aria-label': 'Agregar', onclick: () => { menuFab.hidden = !menuFab.hidden; } }, '+');
+      h('button', { onclick: () => ir('fotos', { agregar: 'avance' }) }, 'Foto de avance de obra'),
+      h('button', { onclick: () => ir('fotos', { agregar: 'ticket' }) }, 'Foto de ticket de compra'));
+    const fab = h('button', { class: 'fab', 'aria-label': 'Agregar foto', onclick: () => { menuFab.hidden = !menuFab.hidden; } }, '+');
     cont.replaceChildren(h('div', { class: 'app' }, top, cuerpo), menuFab, fab, nav);
 
     // Lo que cambia poco se guarda en memoria y se refresca al guardar algo.
@@ -291,7 +294,7 @@ window.crearClienteSupabase = function (cfg) {
       const base = v === 'gasto_nuevo' ? 'gastos' : ['reporte', 'sueldos', 'bitacora', 'calendario', 'fotos', 'estimaciones', 'obra'].includes(v) ? 'mas' : v;
       nav.querySelectorAll('[data-ir]').forEach((b) => b.classList.toggle('on', b.dataset.ir === base));
       if (!ctx.obra && v !== 'obra') { vista = 'obra'; params = { nueva: true }; }
-      fab.hidden = !ctx.obra || ['obra', 'mas', 'gasto_nuevo'].includes(vista);
+      fab.hidden = !ctx.obra || ['obra', 'mas', 'fotos'].includes(vista);
       nav.hidden = !ctx.obra;
       const pantalla = raiz.PANTALLAS[vista];
       cuerpo.replaceChildren(h('p', { class: 'vacio' }, 'Cargando…'));
@@ -425,10 +428,11 @@ window.crearClienteSupabase = function (cfg) {
         g.estado === 'pagado' ? h('span', { class: 'tag p' }, 'Pagado')
           : h('button', { class: 'tag c2', style: 'border:0', title: 'Marcar como pagado', onclick: async () => { await ctx.datos.cambiar('gastos', g.id, { estado: 'pagado' }); ctx.aviso('Marcado como pagado'); ctx.recargar(); } }, 'Comprometido')));
     return { titulo: 'Gastos', contenido: [
+      h('button', { class: 'btn', onclick: () => ctx.ir('gasto_nuevo') }, '+ Nuevo gasto'),
       h('div', { class: 'tabs' }, tab('todos', 'Todos'), tab('comprometido', 'Comprometido'), tab('pagado', 'Pagado')),
       h('div', { class: 'grid2' }, h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Comprometido'), h('div', { class: 'b nar' }, dinero(suma('comprometido')))),
         h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Pagado'), h('div', { class: 'b verde' }, dinero(suma('pagado'))))),
-      vis.length ? vis.map(fila) : h('p', { class: 'vacio' }, 'Sin gastos todavía. Usa el botón +.')] };
+      vis.length ? vis.map(fila) : h('p', { class: 'vacio' }, 'Sin gastos todavía.')] };
   };
 
   raiz.PANTALLAS.gasto_nuevo = async (ctx) => {
@@ -720,34 +724,44 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-<script>// id: fotos.pantalla · tipo: pantalla · módulo: fotos · deps: fotos.esquema, fotos.drive
+<script>// id: fotos.pantalla · tipo: pantalla · módulo: fotos · deps: fotos.esquema, fotos.drive, gastos.esquema
 // Las fotos viven en Google Drive (carpeta privada). Aquí solo se guarda el enlace, fecha, concepto y nota.
 (function (raiz) {
-  const { h, nombreConcepto, hoy, fechaCorta } = raiz.UI;
+  const { h, nombreConcepto, hoy, fechaCorta, dinero } = raiz.UI;
   const enlaceDrive = (x) => (/^https:\/\/(drive|docs)\.google\.com\//.test(x) ? x : 'https://drive.google.com/file/d/' + encodeURIComponent(x) + '/view');
   const idDe = (txt) => { const m = txt.match(/\/d\/([\w-]{10,})/) || txt.match(/[?&]id=([\w-]{10,})/); return m ? m[1] : /^[\w-]{10,}$/.test(txt) ? txt : null; };
   raiz.PANTALLAS.fotos = async (ctx, p) => {
-    const modo = p.modo || 'fecha';
-    const [fs, cs] = await Promise.all([ctx.datos.listar('fotos', { obra_id: ctx.obra.id }, ['-fecha', '-creado']), ctx.conceptos()]);
-    const cMap = Object.fromEntries(cs.map((c) => [c.id, c]));
-    const grupos = {}; fs.forEach((f) => { (grupos[modo === 'fecha' ? f.fecha : nombreConcepto(cMap[f.concepto_id])] ||= []).push(f); });
+    const modo = p.modo || (p.agregar === 'ticket' ? 'tickets' : 'fecha');
+    const tipo = p.agregar === 'ticket' ? 'ticket' : 'avance';
+    const [todas, cs, gs] = await Promise.all([ctx.datos.listar('fotos', { obra_id: ctx.obra.id }, ['-fecha', '-creado']), ctx.conceptos(), ctx.datos.listar('gastos', { obra_id: ctx.obra.id }, ['-fecha', '-creado'])]);
+    const cMap = Object.fromEntries(cs.map((c) => [c.id, c])), gMap = Object.fromEntries(gs.map((g) => [g.id, g]));
+    const nombreGasto = (g) => g ? [g.nota || g.proveedor || 'Gasto', dinero(g.monto), fechaCorta(g.fecha)].join(' · ') : 'Sin gasto';
+    const fs = todas.filter((f) => (modo === 'tickets') === ((f.tipo || 'avance') === 'ticket'));
+    const grupos = {}; fs.forEach((f) => { (grupos[modo === 'concepto' ? nombreConcepto(cMap[f.concepto_id]) : f.fecha] ||= []).push(f); });
     const ficha = (f) => h('a', { href: enlaceDrive(f.drive_id), target: '_blank', rel: 'noopener', class: 'c', style: 'height:92px;display:flex;align-items:flex-end;background:linear-gradient(135deg,#b9b2a4,#8d8576);color:#fff;font-size:12px;text-decoration:none' },
-      (f.concepto_id ? nombreConcepto(cMap[f.concepto_id]) : '') + (f.nota ? ' · ' + f.nota : '') || 'Foto');
+      ((f.tipo === 'ticket' ? (f.gasto_id ? nombreGasto(gMap[f.gasto_id]) : 'Ticket') : (f.concepto_id ? nombreConcepto(cMap[f.concepto_id]) : '')) + (f.nota ? ' · ' + f.nota : '')) || 'Foto');
     const msg = h('p', { class: 'mu', role: 'status' });
     const form = h('form', { class: 'c form', hidden: !p.agregar, onsubmit: async (ev) => {
       ev.preventDefault(); const f = new FormData(form), id = idDe(f.get('enlace').trim());
       if (!id) { msg.textContent = 'Pega el enlace de la foto en Drive (Compartir → Copiar enlace)'; return; }
-      try { await ctx.datos.crear('fotos', { obra_id: ctx.obra.id, drive_id: id, fecha: f.get('fecha') || hoy(), concepto_id: f.get('concepto_id') || null, nota: f.get('nota').trim() || null }); ctx.aviso('Foto guardada'); ctx.ir('fotos'); }
-      catch (e) { msg.textContent = 'No se guardó: ' + e.message; }
-    } }, h('div', { class: 'lbl' }, 'Agregar foto'),
-      h('div', { class: 'mu' }, '1) Sube la foto a tu carpeta privada de Drive. 2) Tócala → Compartir → Copiar enlace. 3) Pégalo aquí.'),
+      const gasto = tipo === 'ticket' ? f.get('gasto_id') || null : null;
+      try {
+        await ctx.datos.crear('fotos', { obra_id: ctx.obra.id, tipo, drive_id: id, fecha: f.get('fecha') || hoy(), concepto_id: tipo === 'avance' ? f.get('concepto_id') || null : (gasto && gMap[gasto].concepto_id) || null, gasto_id: gasto, nota: f.get('nota').trim() || null });
+        if (gasto && !gMap[gasto].comprobante) await ctx.datos.cambiar('gastos', gasto, { comprobante: enlaceDrive(id) }); // el ticket queda como comprobante del gasto
+        ctx.aviso(tipo === 'ticket' ? 'Ticket guardado' : 'Foto guardada'); ctx.ir('fotos', { modo: tipo === 'ticket' ? 'tickets' : 'fecha' });
+      } catch (e) { msg.textContent = 'No se guardó: ' + e.message; }
+    } }, h('div', { class: 'lbl' }, tipo === 'ticket' ? 'Foto de ticket de compra' : 'Foto de avance de obra'),
+      h('div', { class: 'mu' }, '1) Toma la foto y súbela a tu carpeta privada de Drive. 2) Tócala → Compartir → Copiar enlace. 3) Pégalo aquí.'),
+      h('a', { class: 'btn o2', href: 'https://drive.google.com/drive/my-drive', target: '_blank', rel: 'noopener' }, 'Abrir mi Drive'),
       h('label', {}, 'Enlace de Drive', h('input', { name: 'enlace', required: true, placeholder: 'https://drive.google.com/file/d/…' })),
-      h('div', { class: 'grid2' }, h('label', {}, 'Fecha', h('input', { name: 'fecha', type: 'date', value: hoy() })), h('label', {}, 'Concepto', h('select', { name: 'concepto_id' }, h('option', { value: '' }, 'Ninguno'), cs.map((c) => h('option', { value: c.id, selected: c.id === p.concepto }, nombreConcepto(c)))))),
-      h('label', {}, 'Nota', h('input', { name: 'nota', placeholder: 'Ej. armado de zapata' })), msg, h('button', { class: 'btn', type: 'submit' }, 'Guardar foto'));
+      h('div', { class: 'grid2' }, h('label', {}, 'Fecha', h('input', { name: 'fecha', type: 'date', value: hoy() })), tipo === 'ticket'
+        ? h('label', {}, 'Gasto', h('select', { name: 'gasto_id' }, h('option', { value: '' }, 'Sin ligar'), gs.map((g) => h('option', { value: g.id }, nombreGasto(g)))))
+        : h('label', {}, 'Concepto', h('select', { name: 'concepto_id' }, h('option', { value: '' }, 'Ninguno'), cs.map((c) => h('option', { value: c.id, selected: c.id === p.concepto }, nombreConcepto(c)))))),
+      h('label', {}, 'Nota', h('input', { name: 'nota', placeholder: tipo === 'ticket' ? 'Ej. ticket ferretería' : 'Ej. armado de zapata' })), msg, h('button', { class: 'btn', type: 'submit' }, 'Guardar foto'));
     return { titulo: 'Fotos', sub: 'Guardadas en tu Google Drive', contenido: [
-      h('div', { class: 'tabs' }, h('button', { class: modo === 'fecha' ? 'on' : '', onclick: () => ctx.ir('fotos', { modo: 'fecha' }) }, 'Por fecha'), h('button', { class: modo === 'concepto' ? 'on' : '', onclick: () => ctx.ir('fotos', { modo: 'concepto' }) }, 'Por concepto')),
-      h('button', { class: 'btn', onclick: () => { form.hidden = !form.hidden; } }, '+ Agregar foto'), form,
-      Object.entries(grupos).map(([k, xs]) => [h('div', { class: 'lbl' }, (modo === 'fecha' ? fechaCorta(k) : k) + ' · ' + xs.length), h('div', { class: 'grid2' }, xs.map(ficha))]),
+      h('div', { class: 'tabs' }, [['fecha', 'Por fecha'], ['concepto', 'Por concepto'], ['tickets', 'Tickets']].map(([m, t]) => h('button', { class: modo === m ? 'on' : '', onclick: () => ctx.ir('fotos', { modo: m }) }, t))),
+      h('div', { class: 'grid2' }, h('button', { class: 'btn', onclick: () => ctx.ir('fotos', { agregar: 'avance' }) }, '+ Foto de avance'), h('button', { class: 'btn o2', onclick: () => ctx.ir('fotos', { agregar: 'ticket' }) }, '+ Foto de ticket')), form,
+      Object.entries(grupos).map(([k, xs]) => [h('div', { class: 'lbl' }, (modo === 'concepto' ? k : fechaCorta(k)) + ' · ' + xs.length), h('div', { class: 'grid2' }, xs.map(ficha))]),
       fs.length ? h('div', { class: 'mu' }, 'Toca una foto para abrirla en Drive. La app solo guarda el enlace.') : h('p', { class: 'vacio' }, 'Sin fotos todavía.')] };
   };
 })(window);
@@ -829,7 +843,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="0.3.0-20261127154831">
+</head><body data-version="0.3.1-20261127155401">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <section id="acceso">
   <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
@@ -890,7 +904,7 @@ window.crearClienteSupabase = function (cfg) {
     if (id === 'btnSalir') a.salir();
   });
   ['click', 'keydown', 'touchstart'].forEach((ev) => document.addEventListener(ev, () => a.revisarInactividad(), true));
-  document.addEventListener('visibilitychange', () => { if (document.hidden) a.bloquear(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) a.revisarInactividad(); /* al volver: 15 min sin uso → huella o PIN */ });
   a.iniciar(location.href).then((e) => { pintar(e); if (/access_token=|[?&]code=/.test(location.href)) history.replaceState(null, '', location.pathname); });
   window.ACCESO = a;
 })();
