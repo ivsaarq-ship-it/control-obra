@@ -64,6 +64,7 @@ button { cursor:pointer; }
 .dia { border:1px solid #c9c6bf; background:#fff; border-radius:8px; padding:10px 0; font-weight:700; font-size:14px; }
 .dia.on { background:var(--oscuro); color:#fff; border-color:var(--oscuro); }
 .dia.medio { background:linear-gradient(135deg, var(--oscuro) 50%, #fff 50%); color:#fff; text-shadow:0 0 2px #000; }
+.semana { border-left:4px solid var(--acento); } a.btn { text-decoration:none; display:flex; align-items:center; justify-content:center; }
 .red { background:#fff3d6; color:#6b4a00; font-size:13px; font-weight:600; padding:8px 16px; text-align:center; }
 .red.off { background:#3a3f47; color:#fff; }
 .capa-voz { position:fixed; inset:0; background:#0007; display:flex; align-items:flex-end; justify-content:center; padding:16px; z-index:20; }
@@ -426,6 +427,32 @@ window.crearClienteSupabase = function (cfg) {
   if (typeof module !== 'undefined') module.exports = { resumenObra, sinConcepto }; else { raiz.resumenObra = resumenObra; raiz.sinConcepto = sinConcepto; }
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
+<script>// id: reporte.semanal · tipo: regla_calculo · módulo: reporte · deps: reporte.resumen, gastos.esquema, sueldos.esquema, avances.esquema
+// Resumen de una semana (lunes a domingo): gastado, avance logrado, alertas y lo que queda por pagar. Incluye texto para WhatsApp.
+(function (raiz) {
+  const n = (x) => Number(x || 0);
+  const dinero = (x) => '$' + Math.round(n(x)).toLocaleString('en-US');
+  function resumenSemana(d) {
+    const enSemana = (f) => f >= d.desde && f <= d.hasta;
+    const gs = (d.gastos || []).filter((g) => enSemana(g.fecha)), ss = (d.sueldos || []).filter((s) => enSemana(s.fecha));
+    const gastos = gs.reduce((s, x) => s + n(x.monto), 0), sueldos = ss.reduce((s, x) => s + n(x.monto), 0);
+    const cMap = Object.fromEntries((d.conceptos || []).map((c) => [c.id, c]));
+    const presupuesto = (d.conceptos || []).reduce((s, c) => s + n(c.importe), 0);
+    const avs = (d.avances || []).filter((a) => enSemana(a.fecha));
+    const avanceValor = avs.reduce((s, a) => s + n(a.cantidad) * n((cMap[a.concepto_id] || {}).precio_unitario), 0);
+    const avancePct = presupuesto > 0 ? (100 * avanceValor) / presupuesto : 0;
+    const porPagar = [...(d.gastos || []), ...(d.sueldos || [])].filter((x) => x.estado === 'comprometido').reduce((s, x) => s + n(x.monto), 0);
+    const alertas = (d.alertas || []).map((f) => f.concepto || f.nombre).filter(Boolean);
+    const texto = [`*${d.obra || 'Obra'}* · semana ${d.etiqueta || d.desde + ' a ' + d.hasta}`,
+      `Gastado: ${dinero(gastos + sueldos)} (gastos ${dinero(gastos)}, sueldos ${dinero(sueldos)})`,
+      `Avance logrado: ${avancePct.toFixed(1)}% (${dinero(avanceValor)})`,
+      `Por pagar: ${dinero(porPagar)}`,
+      alertas.length ? `⚠ Gastan más de lo avanzado: ${alertas.join(', ')}` : 'Sin alertas'].join('\n');
+    return { gastos, sueldos, gastado: gastos + sueldos, avanceValor, avancePct, porPagar, alertas, movimientos: gs.length + ss.length + avs.length, texto };
+  }
+  if (typeof module !== 'undefined') module.exports = { resumenSemana }; else raiz.resumenSemana = resumenSemana;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
 <script>// id: core.app · tipo: proceso_base · módulo: core · deps: core.datos, ui.ayudas, todas las pantallas
 // Estructura: encabezado, contenido, menú inferior y botón + (foto: la app distingue ticket o avance). Solo se arma después del login.
 (function (raiz) {
@@ -541,9 +568,32 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-<script>// id: inicio.pantalla · tipo: pantalla · módulo: inicio · deps: reporte.resumen, gastos.esquema, sueldos.esquema, core.respaldo
+<script>// id: inicio.pantalla · tipo: pantalla · módulo: inicio · deps: reporte.resumen, reporte.semanal, gastos.esquema, sueldos.esquema, core.respaldo
 (function (raiz) {
   const { h, dinero, pct, barra, nombreConcepto, hoy, fechaCorta, lunes } = raiz.UI;
+  // Resumen de la semana pasada: sale al abrir la app el lunes (o el primer día que la abras esa semana) hasta que toques "Listo".
+  async function tarjetaSemanal(ctx, cerrable, previos) {
+    if (!raiz.resumenSemana) return null;
+    const desde = raiz.UI.masDias(lunes(hoy()), -7), hasta = raiz.UI.masDias(desde, 6), CLAVE = 'resumenVisto:' + ctx.obra.id;
+    if (cerrable) { let visto = null; try { visto = localStorage.getItem(CLAVE); } catch (e) { /* nada */ } if (visto === desde) return null; }
+    const cs = await ctx.conceptos();
+    const [gastos, sueldos, filas] = previos || await Promise.all([ctx.datos.listar('gastos', { obra_id: ctx.obra.id }), ctx.datos.listar('sueldos', { obra_id: ctx.obra.id }), ctx.datos.listar('reporte_conceptos', { obra_id: ctx.obra.id })]);
+    const avances = cs.length ? await ctx.datos.listar('avances', { concepto_id: cs.map((c) => c.id) }) : [];
+    const s = raiz.resumenSemana({ obra: ctx.obra.nombre, desde, hasta, etiqueta: `${fechaCorta(desde)} – ${fechaCorta(hasta)}`, conceptos: cs, gastos, sueldos, avances, alertas: filas.filter((f) => f.alerta) });
+    if (cerrable && !s.movimientos) return null; // semana sin movimientos: no estorba en Inicio
+    const t = h('div', { class: 'c semana' },
+      h('div', { class: 'row' }, h('span', { class: 'lbl' }, '📋 Semana pasada'), h('span', { class: 'mu' }, `${Number(desde.slice(8))}–${fechaCorta(hasta).replace(/^\D+/, '')}`)),
+      h('div', { class: 'grid2', style: 'margin-top:8px' },
+        h('div', {}, h('div', { class: 'mu' }, 'Gastado'), h('div', { class: 'b', style: 'font-size:18px' }, dinero(s.gastado)), h('div', { class: 'mu' }, `Gastos ${dinero(s.gastos)} · Sueldos ${dinero(s.sueldos)}`)),
+        h('div', {}, h('div', { class: 'mu' }, 'Avance logrado'), h('div', { class: 'b verde', style: 'font-size:18px' }, s.avancePct.toFixed(1) + '%'), h('div', { class: 'mu' }, dinero(s.avanceValor) + ' de obra'))),
+      h('div', { class: 'row', style: 'margin-top:8px' }, h('span', {}, 'Por pagar'), h('span', { class: s.porPagar ? 'b nar' : 'b' }, dinero(s.porPagar))),
+      s.alertas.length ? h('div', { class: 'mu rojo' }, '⚠ Gastan más de lo avanzado: ' + s.alertas.join(', ')) : h('div', { class: 'mu' }, 'Sin alertas'),
+      h('div', { class: 'grid2', style: 'margin-top:10px' },
+        h('a', { class: 'btn o2', href: 'https://wa.me/?text=' + encodeURIComponent(s.texto), target: '_blank', rel: 'noopener' }, '📤 WhatsApp'),
+        cerrable ? h('button', { class: 'btn lig', onclick: (e) => { try { localStorage.setItem(CLAVE, desde); } catch (x) { /* nada */ } e.currentTarget.closest('.semana').remove(); } }, 'Listo') : null));
+    return t;
+  }
+  raiz.tarjetaSemanal = tarjetaSemanal;
   raiz.PANTALLAS.inicio = async (ctx) => {
     const obra = ctx.obra.id, desde = lunes(hoy());
     const [filas, gastos, sueldos] = await Promise.all([
@@ -551,7 +601,9 @@ window.crearClienteSupabase = function (cfg) {
       ctx.datos.listar('gastos', { obra_id: obra }), ctx.datos.listar('sueldos', { obra_id: obra })]);
     const r = raiz.resumenObra(filas, raiz.sinConcepto(gastos, sueldos));
     const semana = (xs) => xs.filter((x) => x.fecha >= desde).reduce((s, x) => s + Number(x.monto), 0);
+    const semanal = await tarjetaSemanal(ctx, true, [gastos, sueldos, filas]).catch(() => null);
     const contenido = [
+      semanal,
       h('div', { class: 'grid2' },
         h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Presupuesto'), h('div', { class: 'b', style: 'font-size:18px' }, dinero(r.presupuesto))),
         h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Pagado'), h('div', { class: 'b', style: 'font-size:18px' }, dinero(r.pagado)))),
@@ -870,10 +922,12 @@ window.crearClienteSupabase = function (cfg) {
         td(pct(f.pct_gastado), f.alerta ? 'rojo b' : ''), td(pct(f.pct_avance), f.alerta ? '' : 'verde b'))),
         sc.comprometido + sc.pagado > 0 ? h('tr', {}, td('Sin concepto (generales y sueldos por semana)', 'mu'), td('—'), td(corto(sc.comprometido)), td(corto(sc.pagado)), td('—'), td('—')) : null,
         h('tr', {}, td('Total', 'b'), td(corto(r.presupuesto), 'b'), td(corto(r.comprometido), 'b'), td(corto(r.pagado), 'b'), td(pct(r.gastado), 'b'), td(pct(r.avance), 'b'))));
+    const semanal = raiz.tarjetaSemanal ? await raiz.tarjetaSemanal(ctx, false, [gastos, sueldos, fs]).catch(() => null) : null;
     return { titulo: 'Reporte por concepto', sub: 'Al ' + fechaCorta(hoy()), contenido: [
       fs.length ? h('div', { class: 'c tabla', style: 'padding:6px 8px' }, tabla) : h('p', { class: 'vacio' }, 'Sin conceptos todavía.'),
       r.alertas.length ? h('div', { class: 'c alerta' }, h('div', { class: 'b rojo' }, '● Gastado supera avance'),
         h('div', { class: 'mu' }, r.alertas.map((f) => `${nombreConcepto(f)}: +${Math.round(Number(f.pct_gastado) - Number(f.pct_avance || 0))} puntos`).join(' · '))) : null,
+      semanal,
       h('div', { class: 'mu' }, 'Gastado = comprometido + pagado (gastos y sueldos). Lo que no tiene concepto cuenta en el total de la obra. PDF y Excel: siguiente etapa.')] };
   };
 })(window);
@@ -1515,7 +1569,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="0.9.0-20261127200028">
+</head><body data-version="1.0.0-20261127200546">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <section id="acceso">
   <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
