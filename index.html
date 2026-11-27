@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Control de obra</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#1f5f8b">
+<link rel="icon" href="iconos/icono-192.png"><link rel="apple-touch-icon" href="iconos/apple-touch-icon.png">
 <style>/* id: ui.estilos · tipo: componente_comun · módulo: ui · deps: ninguna */
 :root { --fondo:#f6f5f2; --texto:#1d1d1b; --borde:#c9c6bf; --acento:#1f5f8b; }
 @media (prefers-color-scheme: dark) { :root { --fondo:#161616; --texto:#eceae6; --borde:#444; --acento:#6aa8d8; } }
@@ -177,4 +179,5 @@ window.crearClienteSupabase = function (cfg) {
 })();
 </script>
 
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});</script>
 </body></html>
