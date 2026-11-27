@@ -108,7 +108,7 @@ window.crearClienteSupabase = function (cfg) {
   if (typeof module !== 'undefined') module.exports = { crearAcceso }; else raiz.crearAcceso = crearAcceso;
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
-<script>window.PANTALLA_APP = '<h2>Obra</h2><p>Módulos en construcción.</p><button onclick="ACCESO.salir()">Salir</button>';</script>
+<script>window.PANTALLA_APP = '<h2>Obra</h2><p>Módulos en construcción.</p><div class="acceso"><button id="btnRegHuella" class="principal">Registrar huella / Face ID</button><input id="pinNuevo" inputmode="numeric" maxlength="6" placeholder="PIN nuevo de 6 dígitos" autocomplete="off"><button id="btnFijarPin">Guardar PIN</button><p id="msgApp" role="status"></p><button id="btnSalir" class="ligero">Salir</button></div>';</script>
 </head><body data-version="0.1.0">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas -->
 <section id="acceso" class="acceso">
@@ -148,6 +148,13 @@ window.crearClienteSupabase = function (cfg) {
   $('btnEnlace').onclick = () => r(a.enviarEnlace($('correo').value.trim()));
   $('btnPin').onclick = () => { r(a.entrarConPin($('pin').value)); $('pin').value = ''; };
   $('btnSalir2').onclick = () => a.salir();
+  // Botones dentro de la app (configurar huella y PIN)
+  $('app').addEventListener('click', async (ev) => {
+    const id = ev.target.id, m = (t) => { $('msgApp').textContent = t; };
+    if (id === 'btnRegHuella') { const x = await a.registrarPasskey(); m(x.ok ? 'Huella registrada' : x.mensaje); }
+    if (id === 'btnFijarPin') { const x = await a.fijarPin($('pinNuevo').value); $('pinNuevo').value = ''; m(x.ok ? 'PIN guardado' : x.mensaje); }
+    if (id === 'btnSalir') a.salir();
+  });
   ['click', 'keydown', 'touchstart'].forEach((ev) => document.addEventListener(ev, () => a.revisarInactividad(), true));
   document.addEventListener('visibilitychange', () => { if (document.hidden) a.bloquear(); });
   a.iniciar(location.href).then((e) => { pintar(e); if (/access_token=|[?&]code=/.test(location.href)) history.replaceState(null, '', location.pathname); });
