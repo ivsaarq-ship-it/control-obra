@@ -197,6 +197,9 @@ window.crearClienteSupabase = function (cfg) {
   const pct = (x) => (x === null || x === undefined ? '—' : Math.round(num(x)) + '%');
   const hoy = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
   const fechaCorta = (iso) => { if (!iso) return ''; const d = new Date(iso + 'T12:00:00'); return d.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' }); };
+  const lunes = (iso) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
+  const masDias = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+  const diasEntre = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 864e5);
   const barra = (valor, clase) => h('div', { class: 'bar ' + (clase || '') }, h('i', { style: 'width:' + Math.max(0, Math.min(100, num(valor))) + '%' }));
   const nombreConcepto = (c) => (c ? (c.clave ? c.clave + ' ' : '') + c.concepto : 'Sin concepto');
   function aviso(texto) {
@@ -208,7 +211,7 @@ window.crearClienteSupabase = function (cfg) {
     gastos: 'M12 2v20M17 6H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6', avance: 'M3 17l6-6 4 4 8-8M15 7h6v6', mas: 'M4 6h16M4 12h16M4 18h16',
   };
   const icono = (n) => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '2'); s.setAttribute('aria-hidden', 'true'); const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', ICONOS[n]); s.append(p); return s; };
-  raiz.UI = { h, num, dinero, corto, pct, hoy, fechaCorta, barra, nombreConcepto, aviso, icono };
+  raiz.UI = { h, num, dinero, corto, pct, hoy, fechaCorta, lunes, masDias, diasEntre, barra, nombreConcepto, aviso, icono };
 })(window);
 </script>
 <script>// id: core.datos · tipo: proceso_base · módulo: core · deps: acceso.servicio
@@ -264,7 +267,9 @@ window.crearClienteSupabase = function (cfg) {
       h('button', { 'data-ir': id, onclick: () => ir(id) }, icono(ic || id), txt))));
     const menuFab = h('div', { class: 'menu-fab', hidden: true },
       h('button', { onclick: () => ir('gasto_nuevo') }, '+ Gasto'),
-      h('button', { onclick: () => ir('avances', { registrar: true }) }, '+ Avance'));
+      h('button', { onclick: () => ir('avances', { registrar: true }) }, '+ Avance'),
+      h('button', { onclick: () => ir('sueldos') }, '+ Sueldo'),
+      h('button', { onclick: () => ir('fotos', { agregar: true }) }, '+ Foto'));
     const fab = h('button', { class: 'fab', 'aria-label': 'Agregar', onclick: () => { menuFab.hidden = !menuFab.hidden; } }, '+');
     cont.replaceChildren(h('div', { class: 'app' }, top, cuerpo), menuFab, fab, nav);
 
@@ -283,7 +288,7 @@ window.crearClienteSupabase = function (cfg) {
 
     async function ir(v, p) {
       vista = v; params = p || {}; menuFab.hidden = true;
-      const base = v === 'gasto_nuevo' ? 'gastos' : v;
+      const base = v === 'gasto_nuevo' ? 'gastos' : ['reporte', 'sueldos', 'bitacora', 'calendario', 'fotos', 'estimaciones', 'obra'].includes(v) ? 'mas' : v;
       nav.querySelectorAll('[data-ir]').forEach((b) => b.classList.toggle('on', b.dataset.ir === base));
       if (!ctx.obra && v !== 'obra') { vista = 'obra'; params = { nueva: true }; }
       fab.hidden = !ctx.obra || ['obra', 'mas', 'gasto_nuevo'].includes(vista);
@@ -335,8 +340,7 @@ window.crearClienteSupabase = function (cfg) {
 </script>
 <script>// id: inicio.pantalla · tipo: pantalla · módulo: inicio · deps: reporte.resumen, gastos.esquema, sueldos.esquema
 (function (raiz) {
-  const { h, dinero, pct, barra, nombreConcepto, hoy, fechaCorta } = raiz.UI;
-  const lunes = (iso) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
+  const { h, dinero, pct, barra, nombreConcepto, hoy, fechaCorta, lunes } = raiz.UI;
   raiz.PANTALLAS.inicio = async (ctx) => {
     const obra = ctx.obra.id, desde = lunes(hoy());
     const [filas, gastos, sueldos] = await Promise.all([
@@ -510,16 +514,307 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
+<script>// id: sueldos.pantalla · tipo: pantalla · módulo: sueldos · deps: sueldos.esquema, conceptos.esquema, avances.esquema
+(function (raiz) {
+  const { h, num, dinero, barra, nombreConcepto, hoy, fechaCorta, lunes, masDias: mas } = raiz.UI;
+  raiz.PANTALLAS.sueldos = async (ctx, p) => {
+    const modo = p.modo || 'semana', sem = p.semana || lunes(hoy());
+    const [personas, sueldos, destajos, cs] = await Promise.all([ctx.datos.listar('personas', { activo: true }, ['nombre']),
+      ctx.datos.listar('sueldos', { obra_id: ctx.obra.id }, ['-fecha']), ctx.datos.listar('destajos', { obra_id: ctx.obra.id }, ['creado']), ctx.conceptos()]);
+    const pMap = Object.fromEntries(personas.map((x) => [x.id, x])), cMap = Object.fromEntries(cs.map((c) => [c.id, c]));
+    const msg = h('p', { class: 'mu', role: 'status' });
+    const tabs = h('div', { class: 'tabs' }, h('button', { class: modo === 'semana' ? 'on' : '', onclick: () => ctx.ir('sueldos', { modo: 'semana', semana: sem }) }, 'Por semana'),
+      h('button', { class: modo === 'destajo' ? 'on' : '', onclick: () => ctx.ir('sueldos', { modo: 'destajo' }) }, 'Destajo'));
+    const selPersona = (name) => h('select', { name, required: true }, h('option', { value: '' }, 'Elige persona'), personas.map((x) => h('option', { value: x.id }, x.nombre)), h('option', { value: '_nueva' }, '+ Persona nueva'));
+    async function personaDe(f) {
+      if (f.get('persona_id') !== '_nueva') return f.get('persona_id');
+      const nombre = (f.get('nueva_nombre') || '').trim(); if (!nombre) throw new Error('Escribe el nombre de la persona nueva');
+      const x = await ctx.datos.crear('personas', { nombre, tarifa_dia: f.get('nueva_tarifa') ? num(f.get('nueva_tarifa')) : null }); return x.id;
+    }
+    const nueva = () => h('div', { class: 'grid2', 'data-nueva': '', hidden: true }, h('label', {}, 'Nombre', h('input', { name: 'nueva_nombre' })), h('label', {}, 'Tarifa por día', h('input', { name: 'nueva_tarifa', type: 'number', step: '0.01', min: '0', inputMode: 'decimal' })));
+    const conNueva = (form) => form.addEventListener('change', (e) => { if (e.target.name === 'persona_id') { form.querySelector('[data-nueva]').hidden = e.target.value !== '_nueva'; if (pMap[e.target.value] && form.tarifa && !form.tarifa.value) form.tarifa.value = pMap[e.target.value].tarifa_dia || ''; } });
+    if (modo === 'semana') {
+      const fin = mas(sem, 6), deSem = sueldos.filter((s) => s.modalidad === 'semana' && s.semana_inicio === sem);
+      const form = h('form', { class: 'c form', hidden: true, onsubmit: async (ev) => {
+        ev.preventDefault(); const f = new FormData(form);
+        try {
+          const persona_id = await personaDe(f), dias = num(f.get('dias')), tarifa = num(f.get('tarifa'));
+          if (!(dias > 0 && tarifa > 0)) throw new Error('Escribe días y tarifa');
+          await ctx.datos.crear('sueldos', { obra_id: ctx.obra.id, persona_id, modalidad: 'semana', semana_inicio: sem, fecha: fin > hoy() ? hoy() : fin, dias, tarifa, monto: Math.round(dias * tarifa * 100) / 100, estado: f.get('estado') });
+          ctx.aviso('Sueldo guardado'); ctx.recargar();
+        } catch (e) { msg.textContent = 'No se guardó: ' + e.message; }
+      } }, h('div', { class: 'lbl' }, 'Agregar a esta semana'), selPersona('persona_id'), nueva(),
+        h('div', { class: 'grid2' }, h('label', {}, 'Días', h('input', { name: 'dias', type: 'number', step: '0.5', min: '0', max: '7', inputMode: 'decimal', value: '6' })), h('label', {}, 'Tarifa por día', h('input', { name: 'tarifa', type: 'number', step: '0.01', min: '0', inputMode: 'decimal' }))),
+        h('label', {}, 'Estado', h('select', { name: 'estado' }, h('option', { value: 'pagado' }, 'Pagado'), h('option', { value: 'comprometido' }, 'Comprometido'))), msg, h('button', { class: 'btn', type: 'submit' }, 'Guardar'));
+      conNueva(form);
+      const total = deSem.reduce((s, x) => s + num(x.monto), 0);
+      return { titulo: 'Sueldos', sub: `Semana ${fechaCorta(sem)} – ${fechaCorta(fin)}`, contenido: [tabs,
+        h('div', { class: 'row' }, h('button', { class: 'btn lig', style: 'width:auto', 'aria-label': 'Semana anterior', onclick: () => ctx.ir('sueldos', { modo, semana: mas(sem, -7) }) }, '‹'), h('span', { class: 'lbl' }, `${fechaCorta(sem)} – ${fechaCorta(fin)}`), h('button', { class: 'btn lig', style: 'width:auto', 'aria-label': 'Semana siguiente', onclick: () => ctx.ir('sueldos', { modo, semana: mas(sem, 7) }) }, '›')),
+        deSem.length ? deSem.map((s) => h('div', { class: 'c' }, h('div', { class: 'row' }, h('span', { class: 'lbl' }, (pMap[s.persona_id] || {}).nombre || 'Persona'), h('span', { class: 'b' }, dinero(s.monto))),
+          h('div', { class: 'row' }, h('span', { class: 'mu' }, s.dias ? `${num(s.dias)} días × ${dinero(s.tarifa)}` : ''), h('span', { class: 'tag ' + (s.estado === 'pagado' ? 'p' : 'c2') }, s.estado === 'pagado' ? 'Pagado' : 'Comprometido')))) : h('p', { class: 'vacio' }, 'Sin sueldos esta semana.'),
+        h('div', { class: 'row', style: 'padding:0 4px' }, h('span', { class: 'lbl' }, 'Total semana'), h('span', { class: 'b' }, dinero(total))),
+        h('button', { class: 'btn o2', onclick: () => { form.hidden = !form.hidden; } }, '+ Agregar sueldo'), form] };
+    }
+    // Destajo a precio alzado
+    const avs = cs.length ? await ctx.datos.listar('avances', { concepto_id: cs.map((c) => c.id) }) : [];
+    const ej = {}; avs.forEach((a) => { ej[a.concepto_id] = (ej[a.concepto_id] || 0) + num(a.cantidad); });
+    const pagos = (d) => sueldos.filter((s) => s.destajo_id === d.id);
+    const tarjeta = (d) => {
+      const c = cMap[d.concepto_id] || {}, pag = pagos(d).reduce((s, x) => s + num(x.monto), 0);
+      const pPag = num(d.monto) > 0 ? (100 * pag) / num(d.monto) : 0, pAv = num(c.cantidad) > 0 ? (100 * (ej[d.concepto_id] || 0)) / num(c.cantidad) : 0;
+      const fp = h('form', { class: 'row', style: 'margin-top:8px', onsubmit: async (ev) => {
+        ev.preventDefault(); const m = num(fp.monto.value); if (!(m > 0)) return;
+        await ctx.datos.crear('sueldos', { obra_id: ctx.obra.id, persona_id: d.persona_id, modalidad: 'destajo', concepto_id: d.concepto_id, destajo_id: d.id, fecha: hoy(), monto: m, estado: 'pagado' });
+        ctx.aviso('Pago guardado'); ctx.recargar();
+      } }, h('input', { name: 'monto', type: 'number', step: '0.01', min: '0', inputMode: 'decimal', placeholder: 'Pago de hoy', 'aria-label': 'Pago de hoy' }), h('button', { class: 'btn', type: 'submit', style: 'width:auto;padding:12px 16px' }, 'Pagar'));
+      return h('div', { class: 'c' + (pPag > pAv ? ' alerta' : '') },
+        h('div', { class: 'row' }, h('span', { class: 'lbl' }, `${nombreConcepto(c)} · ${d.cuadrilla || (pMap[d.persona_id] || {}).nombre || ''}`), h('span', { class: 'b' }, dinero(d.monto))),
+        h('div', { class: 'row mu' }, h('span', {}, 'Pagado ' + dinero(pag)), h('span', {}, 'Avance ' + Math.round(pAv) + '%')), barra(pPag, pPag > pAv ? 'r' : 'g'),
+        pPag > pAv ? h('div', { class: 'mu rojo' }, `Pagado ${Math.round(pPag)}% > avance ${Math.round(pAv)}%`) : null, fp);
+    };
+    const form = h('form', { class: 'c form', hidden: true, onsubmit: async (ev) => {
+      ev.preventDefault(); const f = new FormData(form);
+      try {
+        const persona_id = await personaDe(f), monto = num(f.get('monto'));
+        if (!f.get('concepto_id') || !(monto > 0)) throw new Error('Elige concepto y monto');
+        await ctx.datos.crear('destajos', { obra_id: ctx.obra.id, concepto_id: f.get('concepto_id'), persona_id, cuadrilla: f.get('cuadrilla').trim() || null, monto });
+        ctx.aviso('Destajo guardado'); ctx.recargar();
+      } catch (e) { msg.textContent = 'No se guardó: ' + e.message; }
+    } }, h('div', { class: 'lbl' }, 'Nuevo destajo a precio alzado'),
+      h('label', {}, 'Concepto', h('select', { name: 'concepto_id', required: true }, h('option', { value: '' }, 'Elige concepto'), cs.map((c) => h('option', { value: c.id }, nombreConcepto(c))))),
+      h('label', {}, 'Responsable', selPersona('persona_id')), nueva(), h('label', {}, 'Cuadrilla (opcional)', h('input', { name: 'cuadrilla', placeholder: 'Ej. Cuadrilla A' })),
+      h('label', {}, 'Precio alzado', h('input', { name: 'monto', type: 'number', step: '0.01', min: '0', inputMode: 'decimal', required: true })), msg, h('button', { class: 'btn', type: 'submit' }, 'Guardar destajo'));
+    conNueva(form);
+    return { titulo: 'Sueldos', sub: 'Destajo a precio alzado', contenido: [tabs, destajos.length ? destajos.map(tarjeta) : h('p', { class: 'vacio' }, 'Sin destajos.'),
+      h('button', { class: 'btn o2', onclick: () => { form.hidden = !form.hidden; } }, '+ Nuevo destajo'), form] };
+  };
+})(window);
+</script>
+<script>// id: bitacora.vista · tipo: pantalla · módulo: bitacora · deps: avances.esquema, gastos.esquema, sueldos.esquema, fotos.esquema
+// Solo lee otros módulos (más sus notas del día). Día / semana / mes / año.
+(function (raiz) {
+  const { h, num, dinero, nombreConcepto, hoy, fechaCorta, lunes, masDias } = raiz.UI;
+  const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  function rango(per, ref) {
+    if (per === 'dia') return [ref, ref, fechaCorta(ref)];
+    if (per === 'semana') { const a = lunes(ref); return [a, masDias(a, 6), fechaCorta(a) + ' – ' + fechaCorta(masDias(a, 6))]; }
+    const y = +ref.slice(0, 4), m = +ref.slice(5, 7);
+    if (per === 'mes') { const a = ref.slice(0, 8) + '01', b = masDias(new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10), -1); return [a, b, MESES[m - 1] + ' ' + y]; }
+    return [y + '-01-01', y + '-12-31', String(y)];
+  }
+  function mover(per, ref, n) {
+    if (per === 'dia') return masDias(ref, n); if (per === 'semana') return masDias(ref, 7 * n);
+    const y = +ref.slice(0, 4), m = +ref.slice(5, 7) - 1;
+    return per === 'mes' ? new Date(Date.UTC(y, m + n, 1)).toISOString().slice(0, 10) : (y + n) + '-01-01';
+  }
+  raiz.PANTALLAS.bitacora = async (ctx, p) => {
+    const per = p.per || 'semana', ref = p.ref || hoy(); const [a, b, etiqueta] = rango(per, ref);
+    const cs = await ctx.conceptos(), cMap = Object.fromEntries(cs.map((c) => [c.id, c])), obra = ctx.obra.id;
+    const [avs, gs, ss, fs, ns, tipos] = await Promise.all([cs.length ? ctx.datos.listar('avances', { concepto_id: cs.map((c) => c.id) }) : [],
+      ctx.datos.listar('gastos', { obra_id: obra }), ctx.datos.listar('sueldos', { obra_id: obra }), ctx.datos.listar('fotos', { obra_id: obra }),
+      ctx.datos.listar('bitacora_notas', { obra_id: obra }), ctx.listas('tipo_gasto')]);
+    const tMap = Object.fromEntries(tipos.map((t) => [t.id, t.valor]));
+    const en = (x) => x.fecha >= a && x.fecha <= b, dias = {};
+    const dia = (f) => (dias[f] ||= { av: [], gs: [], ss: [], fotos: 0, notas: [] });
+    avs.filter(en).forEach((x) => dia(x.fecha).av.push(x)); gs.filter(en).forEach((x) => dia(x.fecha).gs.push(x));
+    ss.filter(en).forEach((x) => dia(x.fecha).ss.push(x)); fs.filter(en).forEach((x) => { dia(x.fecha).fotos++; }); ns.filter(en).forEach((x) => dia(x.fecha).notas.push(x));
+    const impAv = (x) => num(x.cantidad) * num((cMap[x.concepto_id] || {}).precio_unitario);
+    const ejecutado = avs.filter(en).reduce((s, x) => s + impAv(x), 0), gastado = gs.filter(en).reduce((s, x) => s + num(x.monto), 0) + ss.filter(en).reduce((s, x) => s + num(x.monto), 0);
+    const tab = (id, t) => h('button', { class: per === id ? 'on' : '', onclick: () => ctx.ir('bitacora', { per: id, ref }) }, t);
+    const linea = (txt, monto) => h('div', { class: 'row mu' }, h('span', {}, txt), h('span', {}, monto === null ? '' : dinero(monto)));
+    let tarjetas;
+    if (per === 'año') {
+      const meses = {}; Object.entries(dias).forEach(([f, d]) => { const k = f.slice(0, 7); const m = (meses[k] ||= { e: 0, g: 0 }); m.e += d.av.reduce((s, x) => s + impAv(x), 0); m.g += d.gs.concat(d.ss).reduce((s, x) => s + num(x.monto), 0); });
+      tarjetas = Object.keys(meses).sort().reverse().map((k) => h('button', { class: 'c', style: 'text-align:left;border:0', onclick: () => ctx.ir('bitacora', { per: 'mes', ref: k + '-01' }) },
+        h('div', { class: 'lbl' }, MESES[+k.slice(5) - 1]), linea('Ejecutado', meses[k].e), linea('Gastado', meses[k].g)));
+    } else {
+      tarjetas = Object.keys(dias).sort().reverse().map((f) => { const d = dias[f]; return h('div', { class: 'c' }, h('div', { class: 'lbl' }, fechaCorta(f)),
+        d.av.map((x) => linea(`✔ ${nombreConcepto(cMap[x.concepto_id])} +${num(x.cantidad).toLocaleString('es-MX')} ${(cMap[x.concepto_id] || {}).unidad || ''}`, impAv(x))),
+        d.gs.map((x) => linea('Gasto · ' + (x.nota || tMap[x.tipo_id] || 'gasto'), x.monto)), d.ss.map((x) => linea('Sueldo · ' + (x.modalidad === 'destajo' ? 'destajo' : 'semana'), x.monto)),
+        d.fotos ? linea(`${d.fotos} foto${d.fotos > 1 ? 's' : ''}`, null) : null, d.notas.map((x) => linea('Nota: ' + x.texto, null))); });
+    }
+    const nota = h('form', { class: 'row', onsubmit: async (ev) => { ev.preventDefault(); const t = nota.texto.value.trim(); if (!t) return;
+      await ctx.datos.crear('bitacora_notas', { obra_id: obra, fecha: per === 'dia' ? ref : hoy(), texto: t }); ctx.aviso('Nota guardada'); ctx.recargar(); } },
+      h('input', { name: 'texto', placeholder: 'Nota del día (ej. llovió en la tarde)', 'aria-label': 'Nota del día' }), h('button', { class: 'btn', type: 'submit', style: 'width:auto;padding:12px 16px' }, 'Anotar'));
+    return { titulo: 'Bitácora', sub: 'Lo hecho y lo gastado', contenido: [
+      h('div', { class: 'tabs' }, tab('dia', 'Día'), tab('semana', 'Semana'), tab('mes', 'Mes'), tab('año', 'Año')),
+      h('div', { class: 'row' }, h('button', { class: 'btn lig', style: 'width:auto', 'aria-label': 'Anterior', onclick: () => ctx.ir('bitacora', { per, ref: mover(per, ref, -1) }) }, '‹'), h('span', { class: 'lbl' }, etiqueta),
+        h('button', { class: 'btn lig', style: 'width:auto', 'aria-label': 'Siguiente', onclick: () => ctx.ir('bitacora', { per, ref: mover(per, ref, 1) }) }, '›')),
+      h('div', { class: 'grid2' }, h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Ejecutado'), h('div', { class: 'b verde' }, dinero(ejecutado))), h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Gastado'), h('div', { class: 'b nar' }, dinero(gastado)))),
+      nota, tarjetas.length ? tarjetas : h('p', { class: 'vacio' }, 'Nada registrado en este periodo.')] };
+  };
+})(window);
+</script>
+<script>// id: calendario.gantt · tipo: pantalla · módulo: calendario · deps: calendario.esquema, avances.esquema
+// Gantt simple: plan actual (barra) vs línea base (línea), por día / semana / mes, con dependencias y atrasos.
+(function (raiz) {
+  const { h, num, hoy, fechaCorta, lunes, masDias, diasEntre, nombreConcepto } = raiz.UI;
+  const LETRAS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+  raiz.PANTALLAS.calendario = async (ctx, p) => {
+    const per = p.per || 'semana', ref = p.ref || hoy();
+    const [ts, deps, cs] = await Promise.all([ctx.datos.listar('tareas', { obra_id: ctx.obra.id }, ['orden', 'inicio']), ctx.datos.listar('tarea_dependencias', {}), ctx.conceptos()]);
+    const avs = cs.length ? await ctx.datos.listar('avances', { concepto_id: cs.map((c) => c.id) }) : [];
+    const ej = {}; avs.forEach((a) => { ej[a.concepto_id] = (ej[a.concepto_id] || 0) + num(a.cantidad); });
+    const cMap = Object.fromEntries(cs.map((c) => [c.id, c])), tMap = Object.fromEntries(ts.map((t) => [t.id, t]));
+    const misDeps = deps.filter((d) => tMap[d.tarea_id] && tMap[d.depende_de]);
+    // Rango visible
+    let a, b, cols, etiqueta;
+    if (per === 'dia') { a = b = ref; cols = [fechaCorta(ref)]; etiqueta = fechaCorta(ref); }
+    else if (per === 'semana') { a = lunes(ref); b = masDias(a, 6); cols = LETRAS; etiqueta = fechaCorta(a) + ' – ' + fechaCorta(b); }
+    else { a = ref.slice(0, 8) + '01'; const y = +a.slice(0, 4), m = +a.slice(5, 7); b = masDias(new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10), -1); cols = ['1', '8', '15', '22', '29'].filter((d) => +d <= +b.slice(8)); etiqueta = new Date(a + 'T12:00:00').toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }); }
+    const total = diasEntre(a, b) + 1;
+    const pos = (i, f) => { if (!i || !f || f < a || i > b) return null; const x = Math.max(0, diasEntre(a, i)), y = Math.min(total, diasEntre(a, f) + 1); return `left:${(100 * x) / total}%;width:${(100 * (y - x)) / total}%`; };
+    const estado = (t) => { const c = cMap[t.concepto_id]; const pa = c && num(c.cantidad) > 0 ? (100 * (ej[c.id] || 0)) / num(c.cantidad) : null;
+      if (pa !== null && pa >= 100) return ['terminado', 'var(--verde)']; if (t.inicio <= hoy()) return ['en curso', 'var(--acento)']; return ['pendiente', '#c9c9c4']; };
+    const atrasos = ts.filter((t) => t.base_fin && t.fin > t.base_fin).map((t) => [t, diasEntre(t.base_fin, t.fin)]);
+    const choques = misDeps.filter((d) => tMap[d.tarea_id].inicio <= tMap[d.depende_de].fin).map((d) => [tMap[d.tarea_id], masDias(tMap[d.depende_de].fin, 1), tMap[d.depende_de]]);
+    const visibles = ts.filter((t) => pos(t.inicio, t.fin) || pos(t.base_inicio, t.base_fin));
+    const gantt = h('div', { class: 'c', style: 'padding:8px 10px' },
+      h('div', { style: 'display:flex;font-size:11px;color:var(--tenue);padding-left:96px' }, cols.map((c) => h('span', { style: 'flex:1;text-align:center' }, c))),
+      visibles.length ? visibles.map((t) => { const [est, col] = estado(t), pp = pos(t.inicio, t.fin), pb = pos(t.base_inicio, t.base_fin);
+        return h('button', { style: 'all:unset;display:flex;align-items:center;font-size:11px;height:32px;width:100%;cursor:pointer', 'aria-label': `${t.nombre}: ${fechaCorta(t.inicio)} a ${fechaCorta(t.fin)}, ${est}`, onclick: () => editar(t) },
+          h('span', { style: 'width:96px;flex:none;overflow:hidden;white-space:nowrap;text-overflow:ellipsis' }, t.nombre),
+          h('span', { style: 'flex:1;position:relative;height:100%;border-left:1px solid #ddd;display:block' },
+            pp ? h('span', { style: `position:absolute;top:8px;height:14px;border-radius:4px;background:${col};${pp}` }) : null,
+            pb ? h('span', { style: `position:absolute;top:23px;height:4px;border-radius:2px;background:#9aa4ad;${pb}` }) : null)); })
+        : h('p', { class: 'vacio' }, 'Sin tareas en este periodo.'));
+    const msg = h('p', { class: 'mu', role: 'status' });
+    const form = h('form', { class: 'c form', hidden: true });
+    function editar(t) {
+      t = t || {}; form.hidden = false; form.replaceChildren(
+        h('div', { class: 'lbl' }, t.id ? 'Editar tarea' : 'Nueva tarea'),
+        h('label', {}, 'Nombre', h('input', { name: 'nombre', required: true, value: t.nombre || '' })),
+        h('label', {}, 'Concepto (opcional)', h('select', { name: 'concepto_id' }, h('option', { value: '' }, 'Ninguno'), cs.map((c) => h('option', { value: c.id, selected: c.id === t.concepto_id }, nombreConcepto(c))))),
+        h('div', { class: 'grid2' }, h('label', {}, 'Inicio', h('input', { name: 'inicio', type: 'date', required: true, value: t.inicio || hoy() })), h('label', {}, 'Fin', h('input', { name: 'fin', type: 'date', required: true, value: t.fin || hoy() }))),
+        h('label', {}, 'Empieza después de (opcional)', h('select', { name: 'depende' }, h('option', { value: '' }, 'Ninguna'), ts.filter((x) => x.id !== t.id).map((x) => h('option', { value: x.id, selected: misDeps.some((d) => d.tarea_id === t.id && d.depende_de === x.id) }, x.nombre)))),
+        t.id ? h('div', { class: 'mu' }, t.base_inicio ? `Línea base: ${fechaCorta(t.base_inicio)} – ${fechaCorta(t.base_fin)}` : 'Sin línea base') : h('div', { class: 'mu' }, 'La línea base se fija con el botón "Fijar línea base".'),
+        msg, h('button', { class: 'btn', type: 'submit' }, 'Guardar'), h('button', { class: 'btn lig', type: 'button', onclick: () => { form.hidden = true; } }, 'Cancelar'));
+      form.onsubmit = async (ev) => {
+        ev.preventDefault(); const f = new FormData(form);
+        const fila = { obra_id: ctx.obra.id, nombre: f.get('nombre').trim(), concepto_id: f.get('concepto_id') || null, inicio: f.get('inicio'), fin: f.get('fin') };
+        if (fila.fin < fila.inicio) { msg.textContent = 'El fin no puede ser antes del inicio'; return; }
+        try {
+          const g = t.id ? await ctx.datos.cambiar('tareas', t.id, fila) : await ctx.datos.crear('tareas', Object.assign({ orden: ts.length + 1 }, fila));
+          for (const d of misDeps.filter((d) => d.tarea_id === g.id)) await ctx.datos.borrar('tarea_dependencias', d.id);
+          if (f.get('depende')) await ctx.datos.crear('tarea_dependencias', { tarea_id: g.id, depende_de: f.get('depende') });
+          ctx.aviso('Tarea guardada'); ctx.recargar();
+        } catch (e) { msg.textContent = 'No se guardó: ' + e.message; }
+      };
+      form.scrollIntoView({ block: 'center' });
+    }
+    const fijarBase = async () => { for (const t of ts) await ctx.datos.cambiar('tareas', t.id, { base_inicio: t.inicio, base_fin: t.fin }); ctx.aviso('Línea base fijada'); ctx.recargar(); };
+    const moverA = async (t, desde) => { const dur = diasEntre(t.inicio, t.fin); await ctx.datos.cambiar('tareas', t.id, { inicio: desde, fin: masDias(desde, dur) }); ctx.aviso('Tarea movida'); ctx.recargar(); };
+    const nav = (n) => ctx.ir('calendario', { per, ref: per === 'dia' ? masDias(ref, n) : per === 'semana' ? masDias(ref, 7 * n) : new Date(Date.UTC(+a.slice(0, 4), +a.slice(5, 7) - 1 + n, 1)).toISOString().slice(0, 10) });
+    const tab = (id, t) => h('button', { class: per === id ? 'on' : '', onclick: () => ctx.ir('calendario', { per: id, ref }) }, t);
+    const deHoy = ts.filter((t) => t.inicio <= hoy() && t.fin >= hoy());
+    return { titulo: 'Calendario', sub: 'Programa', contenido: [
+      h('div', { class: 'tabs' }, tab('dia', 'Día'), tab('semana', 'Semana'), tab('mes', 'Mes')),
+      h('div', { class: 'row' }, h('button', { class: 'btn lig', style: 'width:auto', 'aria-label': 'Anterior', onclick: () => nav(-1) }, '‹'), h('span', { class: 'lbl' }, etiqueta), h('button', { class: 'btn lig', style: 'width:auto', 'aria-label': 'Siguiente', onclick: () => nav(1) }, '›')),
+      gantt,
+      h('div', { class: 'mu', style: 'display:flex;gap:12px;flex-wrap:wrap' }, h('span', { class: 'verde' }, '■ terminado'), h('span', { class: 'nar' }, '■ en curso'), h('span', {}, '■ pendiente'), h('span', {}, '▬ línea base')),
+      deHoy.length ? h('div', { class: 'c' }, h('div', { class: 'lbl' }, 'Hoy · ' + fechaCorta(hoy())), deHoy.map((t) => h('div', { class: 'mu' }, '▸ ' + t.nombre))) : null,
+      atrasos.map(([t, d]) => h('div', { class: 'c alerta' }, h('div', { class: 'b rojo' }, `${t.nombre}: ${d} día${d > 1 ? 's' : ''} atrasada`), h('div', { class: 'mu' }, `Fin base ${fechaCorta(t.base_fin)} · fin actual ${fechaCorta(t.fin)}`))),
+      choques.map(([t, desde, prev]) => h('div', { class: 'c alerta' }, h('div', { class: 'b rojo' }, `${t.nombre} empieza antes de que termine ${prev.nombre}`),
+        h('button', { class: 'btn o2', style: 'margin-top:8px', onclick: () => moverA(t, desde) }, `Mover ${t.nombre} → ${fechaCorta(desde)}`))),
+      h('div', { class: 'grid2' }, h('button', { class: 'btn o2', onclick: () => editar() }, '+ Tarea'), h('button', { class: 'btn o2', disabled: !ts.length, onclick: (e) => { if (e.currentTarget.dataset.seguro) return fijarBase(); e.currentTarget.dataset.seguro = '1'; e.currentTarget.textContent = '¿Seguro? Toca otra vez'; } }, 'Fijar línea base')), form] };
+  };
+})(window);
+</script>
+<script>// id: fotos.pantalla · tipo: pantalla · módulo: fotos · deps: fotos.esquema, fotos.drive
+// Las fotos viven en Google Drive (carpeta privada). Aquí solo se guarda el enlace, fecha, concepto y nota.
+(function (raiz) {
+  const { h, nombreConcepto, hoy, fechaCorta } = raiz.UI;
+  const enlaceDrive = (x) => (/^https:\/\/(drive|docs)\.google\.com\//.test(x) ? x : 'https://drive.google.com/file/d/' + encodeURIComponent(x) + '/view');
+  const idDe = (txt) => { const m = txt.match(/\/d\/([\w-]{10,})/) || txt.match(/[?&]id=([\w-]{10,})/); return m ? m[1] : /^[\w-]{10,}$/.test(txt) ? txt : null; };
+  raiz.PANTALLAS.fotos = async (ctx, p) => {
+    const modo = p.modo || 'fecha';
+    const [fs, cs] = await Promise.all([ctx.datos.listar('fotos', { obra_id: ctx.obra.id }, ['-fecha', '-creado']), ctx.conceptos()]);
+    const cMap = Object.fromEntries(cs.map((c) => [c.id, c]));
+    const grupos = {}; fs.forEach((f) => { (grupos[modo === 'fecha' ? f.fecha : nombreConcepto(cMap[f.concepto_id])] ||= []).push(f); });
+    const ficha = (f) => h('a', { href: enlaceDrive(f.drive_id), target: '_blank', rel: 'noopener', class: 'c', style: 'height:92px;display:flex;align-items:flex-end;background:linear-gradient(135deg,#b9b2a4,#8d8576);color:#fff;font-size:12px;text-decoration:none' },
+      (f.concepto_id ? nombreConcepto(cMap[f.concepto_id]) : '') + (f.nota ? ' · ' + f.nota : '') || 'Foto');
+    const msg = h('p', { class: 'mu', role: 'status' });
+    const form = h('form', { class: 'c form', hidden: !p.agregar, onsubmit: async (ev) => {
+      ev.preventDefault(); const f = new FormData(form), id = idDe(f.get('enlace').trim());
+      if (!id) { msg.textContent = 'Pega el enlace de la foto en Drive (Compartir → Copiar enlace)'; return; }
+      try { await ctx.datos.crear('fotos', { obra_id: ctx.obra.id, drive_id: id, fecha: f.get('fecha') || hoy(), concepto_id: f.get('concepto_id') || null, nota: f.get('nota').trim() || null }); ctx.aviso('Foto guardada'); ctx.ir('fotos'); }
+      catch (e) { msg.textContent = 'No se guardó: ' + e.message; }
+    } }, h('div', { class: 'lbl' }, 'Agregar foto'),
+      h('div', { class: 'mu' }, '1) Sube la foto a tu carpeta privada de Drive. 2) Tócala → Compartir → Copiar enlace. 3) Pégalo aquí.'),
+      h('label', {}, 'Enlace de Drive', h('input', { name: 'enlace', required: true, placeholder: 'https://drive.google.com/file/d/…' })),
+      h('div', { class: 'grid2' }, h('label', {}, 'Fecha', h('input', { name: 'fecha', type: 'date', value: hoy() })), h('label', {}, 'Concepto', h('select', { name: 'concepto_id' }, h('option', { value: '' }, 'Ninguno'), cs.map((c) => h('option', { value: c.id, selected: c.id === p.concepto }, nombreConcepto(c)))))),
+      h('label', {}, 'Nota', h('input', { name: 'nota', placeholder: 'Ej. armado de zapata' })), msg, h('button', { class: 'btn', type: 'submit' }, 'Guardar foto'));
+    return { titulo: 'Fotos', sub: 'Guardadas en tu Google Drive', contenido: [
+      h('div', { class: 'tabs' }, h('button', { class: modo === 'fecha' ? 'on' : '', onclick: () => ctx.ir('fotos', { modo: 'fecha' }) }, 'Por fecha'), h('button', { class: modo === 'concepto' ? 'on' : '', onclick: () => ctx.ir('fotos', { modo: 'concepto' }) }, 'Por concepto')),
+      h('button', { class: 'btn', onclick: () => { form.hidden = !form.hidden; } }, '+ Agregar foto'), form,
+      Object.entries(grupos).map(([k, xs]) => [h('div', { class: 'lbl' }, (modo === 'fecha' ? fechaCorta(k) : k) + ' · ' + xs.length), h('div', { class: 'grid2' }, xs.map(ficha))]),
+      fs.length ? h('div', { class: 'mu' }, 'Toca una foto para abrirla en Drive. La app solo guarda el enlace.') : h('p', { class: 'vacio' }, 'Sin fotos todavía.')] };
+  };
+})(window);
+</script>
+<script>// id: estimaciones.pantalla · tipo: pantalla · módulo: estimaciones · deps: estimaciones.esquema, avances.esquema, conceptos.esquema
+// Estimación = lo ejecutado en el periodo × precio unitario. Al cerrar, se congela por concepto.
+(function (raiz) {
+  const { h, num, dinero, pct, barra, nombreConcepto, hoy, fechaCorta, masDias } = raiz.UI;
+  raiz.PANTALLAS.estimaciones = async (ctx) => {
+    const obra = ctx.obra.id;
+    const [es, cs] = await Promise.all([ctx.datos.listar('estimaciones', { obra_id: obra }, ['-numero']), ctx.conceptos()]);
+    const det = es.length ? await ctx.datos.listar('estimacion_conceptos', { estimacion_id: es.map((e) => e.id) }) : [];
+    const avs = cs.length ? await ctx.datos.listar('avances', { concepto_id: cs.map((c) => c.id) }) : [];
+    const presupuesto = cs.reduce((s, c) => s + num(c.importe), 0);
+    const cerradas = es.filter((e) => e.estado !== 'borrador'), borrador = es.find((e) => e.estado === 'borrador');
+    const acumAntes = (fin) => { const m = {}; det.filter((d) => cerradas.some((e) => e.id === d.estimacion_id && e.periodo_fin < fin)).forEach((d) => { m[d.concepto_id] = (m[d.concepto_id] || 0) + num(d.cantidad); }); return m; };
+    const msg = h('p', { class: 'mu', role: 'status' });
+    let tarjeta = null;
+    if (borrador) {
+      const ant = acumAntes(borrador.periodo_inicio);
+      const este = {}; avs.filter((a) => a.fecha >= borrador.periodo_inicio && a.fecha <= borrador.periodo_fin).forEach((a) => { este[a.concepto_id] = (este[a.concepto_id] || 0) + num(a.cantidad); });
+      const filas = cs.filter((c) => este[c.id] || ant[c.id]).map((c) => { const q = num(c.cantidad) || 1;
+        return { c, ant: (100 * (ant[c.id] || 0)) / q, este: (100 * (este[c.id] || 0)) / q, cant: este[c.id] || 0, imp: Math.round((este[c.id] || 0) * num(c.precio_unitario) * 100) / 100 }; });
+      const importe = filas.reduce((s, f) => s + f.imp, 0);
+      const acumulado = det.filter((d) => cerradas.some((e) => e.id === d.estimacion_id)).reduce((s, d) => s + num(d.importe), 0) + importe;
+      const cerrar = async () => {
+        try {
+          for (const f of filas.filter((f) => f.cant > 0)) await ctx.datos.crear('estimacion_conceptos', { estimacion_id: borrador.id, concepto_id: f.c.id, cantidad: f.cant, importe: f.imp });
+          await ctx.datos.cambiar('estimaciones', borrador.id, { estado: 'enviada' }); ctx.aviso('Estimación cerrada'); ctx.recargar();
+        } catch (e) { msg.textContent = 'No se cerró: ' + e.message; }
+      };
+      tarjeta = [h('div', { class: 'c', style: 'border:2px solid var(--acento)' },
+        h('div', { class: 'row' }, h('span', { class: 'lbl' }, `Est. ${borrador.numero} · ${fechaCorta(borrador.periodo_inicio)} – ${fechaCorta(borrador.periodo_fin)}`), h('span', { class: 'tag c2' }, 'Borrador')),
+        h('div', { class: 'row', style: 'margin-top:6px' }, h('span', { class: 'mu' }, 'Este periodo'), h('span', { class: 'big' }, dinero(importe))),
+        h('div', { class: 'row mu' }, h('span', {}, 'Acumulado'), h('span', { class: 'b' }, dinero(acumulado) + ' · ' + pct(presupuesto ? (100 * acumulado) / presupuesto : 0))), barra(presupuesto ? (100 * acumulado) / presupuesto : 0, 'g')),
+        filas.length ? h('div', { class: 'c tabla', style: 'padding:6px 8px' }, h('table', {}, h('thead', {}, h('tr', {}, ['Concepto', 'Anterior', 'Este', 'Acum.', 'Importe'].map((t) => h('th', { scope: 'col' }, t)))),
+          h('tbody', {}, filas.map((f) => h('tr', {}, h('td', {}, nombreConcepto(f.c)), h('td', {}, pct(f.ant)), h('td', {}, pct(f.este)), h('td', { class: 'b' }, pct(f.ant + f.este)), h('td', {}, dinero(f.imp))))))) : h('p', { class: 'vacio' }, 'Sin avances en este periodo.'),
+        msg, h('button', { class: 'btn', disabled: !filas.some((f) => f.cant > 0), onclick: (e) => { if (e.currentTarget.dataset.seguro) return cerrar(); e.currentTarget.dataset.seguro = '1'; e.currentTarget.textContent = '¿Seguro? Toca otra vez'; } }, 'Cerrar periodo')];
+    } else {
+      const ult = cerradas[0], ini = ult ? masDias(ult.periodo_fin, 1) : ctx.obra.fecha_inicio || hoy();
+      const f = h('form', { class: 'c form', onsubmit: async (ev) => {
+        ev.preventDefault(); const d = new FormData(f);
+        if (d.get('fin') < d.get('inicio')) { msg.textContent = 'El fin no puede ser antes del inicio'; return; }
+        try { await ctx.datos.crear('estimaciones', { obra_id: obra, numero: (es[0] ? es[0].numero : 0) + 1, periodo_inicio: d.get('inicio'), periodo_fin: d.get('fin'), estado: 'borrador' }); ctx.recargar(); }
+        catch (e) { msg.textContent = 'No se creó: ' + e.message; }
+      } }, h('div', { class: 'lbl' }, `Nueva estimación (Est. ${(es[0] ? es[0].numero : 0) + 1})`),
+        h('div', { class: 'grid2' }, h('label', {}, 'Del', h('input', { name: 'inicio', type: 'date', value: ini, required: true })), h('label', {}, 'Al', h('input', { name: 'fin', type: 'date', value: hoy() > ini ? hoy() : ini, required: true }))),
+        msg, h('button', { class: 'btn', type: 'submit' }, 'Crear borrador'));
+      tarjeta = [f];
+    }
+    const impDe = (e) => det.filter((d) => d.estimacion_id === e.id).reduce((s, d) => s + num(d.importe), 0);
+    return { titulo: 'Estimaciones', contenido: [tarjeta, cerradas.length ? h('div', { class: 'cap' }, 'Anteriores') : null,
+      cerradas.map((e) => h('div', { class: 'c row' }, h('span', {}, `Est. ${e.numero} · ${fechaCorta(e.periodo_inicio)} – ${fechaCorta(e.periodo_fin)}`), h('span', { class: 'b' }, dinero(impDe(e))),
+        e.estado === 'pagada' ? h('span', { class: 'tag p' }, 'Cobrada') : h('button', { class: 'tag c2', style: 'border:0', title: 'Marcar como cobrada', onclick: async () => { await ctx.datos.cambiar('estimaciones', e.id, { estado: 'pagada' }); ctx.aviso('Marcada como cobrada'); ctx.recargar(); } }, 'Enviada')))] };
+  };
+})(window);
+</script>
 <script>// id: ajustes.pantalla · tipo: pantalla · módulo: ajustes · deps: acceso.reglas, obra.pantalla
 (function (raiz) {
   const { h } = raiz.UI;
   raiz.PANTALLAS.mas = async (ctx) => {
     const obras = await ctx.datos.listar('obras', {}, ['creado']);
     const ir = (txt, v, p, desc) => h('button', { class: 'c', style: 'text-align:left;border:0', onclick: () => ctx.ir(v, p) }, h('div', { class: 'lbl' }, txt), desc ? h('div', { class: 'mu' }, desc) : null);
-    const proximo = (txt) => h('div', { class: 'c', style: 'opacity:.6' }, h('div', { class: 'lbl' }, txt), h('div', { class: 'mu' }, 'Siguiente etapa'));
     return { titulo: 'Más', contenido: [
       ir('Reporte por concepto', 'reporte', null, 'Presupuesto, comprometido, pagado, % gastado vs % avance'),
-      proximo('Sueldos'), proximo('Bitácora'), proximo('Calendario'), proximo('Fotos'), proximo('Estimaciones'),
+      ir('Sueldos', 'sueldos', null, 'Por semana y destajo a precio alzado'), ir('Bitácora', 'bitacora', null, 'Lo hecho y lo gastado por día, semana, mes y año'),
+      ir('Calendario', 'calendario', null, 'Programa con línea base y atrasos'), ir('Fotos', 'fotos', null, 'Enlaces a tu Google Drive'), ir('Estimaciones', 'estimaciones', null, 'Periodo, importe y acumulado'),
       h('div', { class: 'cap' }, 'Obra'),
       ir('Datos de la obra', 'obra', null, ctx.obra.nombre),
       obras.length > 1 ? h('label', { class: 'form' }, h('span', { class: 'lbl' }, 'Cambiar de obra'), h('select', { onchange: (e) => { ctx.usarObra(obras.find((o) => o.id === e.target.value)); ctx.ir('inicio'); } },
@@ -534,7 +829,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="0.2.0">
+</head><body data-version="0.3.0-20261127154831">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <section id="acceso">
   <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
@@ -601,5 +896,21 @@ window.crearClienteSupabase = function (cfg) {
 })();
 </script>
 
-<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});</script>
+<script>
+// Actualización automática: si hay versión nueva publicada, recarga sola (al abrir y al volver a la app).
+(function () {
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(function (r) { r.update(); }).catch(function () {});
+  var yo = document.body.dataset.version, revisando = false;
+  function revisar() {
+    if (revisando || location.protocol === 'file:') return; revisando = true;
+    fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); })
+      .then(function (v) {
+        if (!v.sello || v.sello === yo) return;
+        var k = 'recarga:' + v.sello; try { if (sessionStorage.getItem(k)) return; sessionStorage.setItem(k, '1'); } catch (e) { /* sin almacenamiento */ }
+        location.reload(); // una sola vez por versión, para no quedar en bucle
+      }).catch(function () {}).then(function () { revisando = false; });
+  }
+  revisar(); document.addEventListener('visibilitychange', function () { if (!document.hidden) revisar(); });
+})();
+</script>
 </body></html>
