@@ -53,6 +53,8 @@ button { cursor:pointer; }
 .nav svg { width:22px; height:22px; }
 .menu-fab { position:fixed; right:max(18px, calc(50% - 262px)); bottom:150px; display:grid; gap:8px; z-index:5; }
 .menu-fab button { background:var(--oscuro); color:#fff; border:0; border-radius:12px; padding:14px 18px; font-weight:600; text-align:left; font-size:15px; }
+.fila-fab { display:flex; gap:6px; justify-content:flex-end; }
+.menu-fab .gal { background:#fff; color:var(--oscuro); border:1px solid #c9c6bf; }
 .fab { position:fixed; right:max(18px, calc(50% - 262px)); bottom:84px; width:56px; height:56px; border-radius:28px; background:var(--acento); color:#fff; border:0; font-size:30px; box-shadow:0 4px 10px #0003; }
 table { width:100%; border-collapse:collapse; font-size:12px; } td, th { padding:7px 4px; text-align:right; border-bottom:1px solid #eee; }
 th { color:var(--tenue); font-weight:600; font-size:11px; } td:first-child, th:first-child { text-align:left; } tr.al td { background:#fdeeee; }
@@ -271,14 +273,15 @@ window.crearClienteSupabase = function (cfg) {
     const top = h('header', { class: 'top' }), cuerpo = h('section', { class: 'cuerpo' });
     const nav = h('nav', { class: 'nav', 'aria-label': 'Menú' }, h('div', { class: 'nav-in' }, MENU.map(([id, txt, ic]) =>
       h('button', { 'data-ir': id, onclick: () => ir(id) }, icono(ic || id), txt))));
-    // Cámara: se abre directo al tocar "Foto de avance" o "Foto de ticket" (debe ser en el mismo toque).
-    const camara = h('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: true, onchange: () => { const f = camara.files[0]; camara.value = ''; if (f) ir('fotos', { agregar: camara.dataset.tipo, archivo: f }); } });
-    ctx.tomarFoto = (tipo) => { camara.dataset.tipo = tipo; menuFab.hidden = true; camara.click(); };
-    const menuFab = h('div', { class: 'menu-fab', hidden: true },
-      h('button', { onclick: () => ctx.tomarFoto('avance') }, 'Foto de avance de obra'),
-      h('button', { onclick: () => ctx.tomarFoto('ticket') }, 'Foto de ticket de compra'));
+    // Cámara: se abre directo al tocar "Foto obra" o "Foto ticket" (debe ser en el mismo toque).
+    // "Galería" abre las fotos del teléfono en lugar de la cámara.
+    const entrada = (conCamara) => { const el = h('input', { type: 'file', accept: 'image/*', capture: conCamara ? 'environment' : null, hidden: true, onchange: () => { const f = el.files[0]; el.value = ''; if (f) ir('fotos', { agregar: el.dataset.tipo, archivo: f }); } }); return el; };
+    const camara = entrada(true), galeria = entrada(false);
+    ctx.tomarFoto = (tipo, deGaleria) => { const el = deGaleria ? galeria : camara; el.dataset.tipo = tipo; menuFab.hidden = true; el.click(); };
+    const fila = (tipo, txt) => h('div', { class: 'fila-fab' }, h('button', { onclick: () => ctx.tomarFoto(tipo) }, txt), h('button', { class: 'gal', onclick: () => ctx.tomarFoto(tipo, true) }, 'Galería'));
+    const menuFab = h('div', { class: 'menu-fab', hidden: true }, fila('avance', 'Foto obra'), fila('ticket', 'Foto ticket'));
     const fab = h('button', { class: 'fab', 'aria-label': 'Tomar foto', onclick: () => { menuFab.hidden = !menuFab.hidden; } }, '+');
-    cont.replaceChildren(h('div', { class: 'app' }, top, cuerpo), camara, menuFab, fab, nav);
+    cont.replaceChildren(h('div', { class: 'app' }, top, cuerpo), camara, galeria, menuFab, fab, nav);
 
     // Lo que cambia poco se guarda en memoria y se refresca al guardar algo.
     ctx.conceptos = async () => (ctx.cache.conceptos ||= await datos.listar('conceptos', { obra_id: ctx.obra.id }, ['orden', 'clave', 'creado']));
@@ -802,7 +805,7 @@ window.crearClienteSupabase = function (cfg) {
   }
   async function leerTexto(blob, original) {
     await cargar(TESS);
-    const r = await raiz.Tesseract.recognize(await paraLeer(original || blob), 'spa');
+    const r = await Promise.race([raiz.Tesseract.recognize(await paraLeer(original || blob), 'spa'), new Promise((_, mal) => setTimeout(() => mal(new Error('El lector tardó demasiado')), 90000))]);
     return (r && r.data && r.data.text) || '';
   }
   raiz.LECTOR = { achicar, leerTexto };
@@ -914,32 +917,35 @@ window.crearClienteSupabase = function (cfg) {
     const nuevoGasto = h('div', { class: 'form' }, h('label', {}, 'Monto del ticket', monto), h('label', {}, 'Proveedor', proveedor), h('label', {}, 'Concepto del gasto', conceptoSel('concepto_gasto')));
     const deTicket = h('div', { class: 'form' }, h('label', {}, 'Gasto', gastoSel), nuevoGasto);
     const deAvance = h('div', { class: 'form' }, h('label', {}, 'Concepto', conceptoSel('concepto_id')));
-    const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Tipo de foto' }, [['avance', 'Avance de obra'], ['ticket', 'Ticket de compra']].map(([id, txt]) => h('button', { type: 'button', 'data-tipo': id, onclick: () => ponerTipo(id) }, txt)));
+    const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Tipo de foto' }, [['avance', 'Foto obra'], ['ticket', 'Foto ticket']].map(([id, txt]) => h('button', { type: 'button', 'data-tipo': id, onclick: () => ponerTipo(id) }, txt)));
     function ponerTipo(t) { tipo = t; chips.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.tipo === t)); deTicket.hidden = t !== 'ticket'; deAvance.hidden = t !== 'avance'; }
     ponerTipo(tipo);
     if (p.archivo) setTimeout(() => leer(p.archivo), 0);
 
     async function leer(archivo) {
       if (!archivo) return;
-      foto = archivo; vista.src = URL.createObjectURL(archivo); vista.hidden = false; lectura.textContent = 'Leyendo la foto…';
+      foto = archivo; vista.src = URL.createObjectURL(archivo); vista.hidden = false; lectura.textContent = tipo === 'ticket' ? 'Leyendo el ticket… (la primera vez tarda hasta 1 min)' : 'Revisando la foto…';
       try {
         foto = await raiz.LECTOR.achicar(archivo);
         const r = raiz.clasificarTexto(await raiz.LECTOR.leerTexto(foto, archivo));
         const elegido = p.agregar === 'ticket' || p.agregar === 'avance';
         if (!elegido) ponerTipo(r.tipo);
-        if (tipo === 'ticket' && r.tipo === 'avance') { lectura.textContent = 'No pude leer el ticket. Escribe el monto.'; return; }
-        if (tipo === 'avance' && r.tipo === 'ticket') { lectura.textContent = 'Parece ticket de compra. Si lo es, toca "Ticket de compra".'; return; }
-        if (r.tipo === 'ticket') {
-          if (r.monto) monto.value = r.monto; if (r.proveedor) proveedor.value = r.proveedor; if (r.fecha) fecha.value = r.fecha;
-          lectura.textContent = 'Parece ticket de compra' + (r.monto ? ' por ' + dinero(r.monto) : '') + '. Revisa y guarda.';
-        } else lectura.textContent = 'Parece foto de avance de obra (sin precios). Revisa y guarda.';
-      } catch (e) { lectura.textContent = 'No se pudo leer la foto; elige el tipo a mano.'; }
+        if (tipo === 'avance') { lectura.textContent = r.tipo === 'ticket' ? 'Parece ticket. Si lo es, toca "Foto ticket".' : 'Foto de obra lista. Guarda.'; return; }
+        if (r.tipo === 'ticket') { if (r.proveedor && !proveedor.value) proveedor.value = r.proveedor; if (r.fecha) fecha.value = r.fecha; }
+        if (r.monto) { monto.value = r.monto; lectura.textContent = `Leí ${dinero(r.monto)}. Revisa y toca Guardar.`; }
+        else pedirMonto('No pude leer el monto. Escríbelo y toca Guardar.');
+      } catch (e) { if (tipo === 'ticket') pedirMonto('No pude leer el ticket. Escribe el monto y toca Guardar.'); else lectura.textContent = ''; }
+    }
+    function pedirMonto(t) {
+      lectura.textContent = t; lectura.style.color = '#b3261e';
+      if (gastoSel.value) return; // va ligado a un gasto que ya existe
+      monto.focus(); monto.scrollIntoView({ block: 'center' });
     }
 
     const form = h('form', { class: 'c form', hidden: !p.agregar, onsubmit: async (ev) => {
       ev.preventDefault(); msg.textContent = '';
       const d = new FormData(form), f = fecha.value || hoy(), ligar = tipo === 'ticket' ? gastoSel.value : '';
-      if (tipo === 'ticket' && !ligar && !(num(monto.value) > 0)) { msg.textContent = 'Escribe el monto del ticket'; return; }
+      if (tipo === 'ticket' && !ligar && !(num(monto.value) > 0)) { pedirMonto('Falta el monto del ticket. Escríbelo y toca Guardar.'); return; }
       if (!foto) { msg.textContent = 'Primero toma la foto'; return; }
       const boton = form.querySelector('button[type=submit]'); boton.disabled = true; msg.textContent = 'Guardando…';
       try {
@@ -951,7 +957,7 @@ window.crearClienteSupabase = function (cfg) {
           gastoId = g.id; concepto = g.concepto_id || null;
         } else if (ligar) concepto = gMap[ligar].concepto_id || null;
         const donde = await guardar(ctx, foto, { obra_id: ctx.obra.id, tipo, fecha: f, concepto_id: concepto, gasto_id: gastoId, gasto_comprobante: comprobante, nota: d.get('nota').trim() || null });
-        const que = tipo === 'ticket' ? (ligar ? 'Ticket ligado al gasto' : 'Ticket y gasto guardados') : 'Foto guardada';
+        const que = tipo === 'ticket' ? (ligar ? 'Ticket ligado al gasto' : `Gasto de ${dinero(num(monto.value))} creado`) : 'Foto guardada';
         ctx.aviso(donde === 'drive' ? que : que + '. La foto queda en el teléfono hasta subirla a Drive');
         ctx.ir('fotos', { modo: tipo === 'ticket' ? 'tickets' : 'fecha' });
       } catch (e) { msg.textContent = 'No se guardó: ' + e.message; boton.disabled = false; }
@@ -963,7 +969,8 @@ window.crearClienteSupabase = function (cfg) {
 
     return { titulo: 'Fotos', sub: 'Guardadas en tu Google Drive', contenido: [
       h('div', { class: 'tabs' }, [['fecha', 'Por fecha'], ['concepto', 'Por concepto'], ['tickets', 'Tickets']].map(([m, t]) => h('button', { class: modo === m ? 'on' : '', onclick: () => ctx.ir('fotos', { modo: m }) }, t))),
-      form.hidden ? h('div', { class: 'grid2' }, h('button', { class: 'btn', onclick: () => ctx.tomarFoto('avance') }, '+ Foto de avance'), h('button', { class: 'btn o2', onclick: () => ctx.tomarFoto('ticket') }, '+ Foto de ticket')) : null, form,
+      form.hidden ? [h('div', { class: 'grid2' }, h('button', { class: 'btn', onclick: () => ctx.tomarFoto('avance') }, '+ Foto obra'), h('button', { class: 'btn o2', onclick: () => ctx.tomarFoto('ticket') }, '+ Foto ticket')),
+        h('div', { class: 'grid2' }, h('button', { class: 'btn lig', onclick: () => ctx.tomarFoto('avance', true) }, 'Obra desde galería'), h('button', { class: 'btn lig', onclick: () => ctx.tomarFoto('ticket', true) }, 'Ticket desde galería'))] : null, form,
       pendientes.length ? h('div', { class: 'c alerta' }, h('div', { class: 'lbl' }, `${pendientes.length} foto${pendientes.length > 1 ? 's' : ''} en el teléfono, sin subir a Drive`),
         h('div', { class: 'grid2' }, pendientes.map((x) => h('img', { src: URL.createObjectURL(x.blob), alt: x.tipo === 'ticket' ? 'Ticket' : 'Avance', style: 'width:100%;height:92px;object-fit:cover;border-radius:10px' }))),
         drive().disponible() ? h('button', { class: 'btn', onclick: async (e) => { e.currentTarget.disabled = true; let n = 0;
@@ -1052,7 +1059,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="0.4.2-20261127185927">
+</head><body data-version="0.4.3-20261127190300">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <section id="acceso">
   <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
