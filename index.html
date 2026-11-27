@@ -724,7 +724,35 @@ window.crearClienteSupabase = function (cfg) {
   if (typeof module !== 'undefined') module.exports = { interpretarDictado, leerNumeros }; else raiz.interpretarDictado = interpretarDictado;
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
-<script>// id: gastos.pantalla · tipo: pantalla · módulo: gastos · deps: gastos.esquema, conceptos.esquema
+<script>// id: gastos.sugerir_concepto · tipo: regla_calculo · módulo: gastos · deps: gastos.esquema, conceptos.esquema
+// Sugiere el concepto de un gasto aprendiendo de lo ya capturado: mismo proveedor, mismas palabras (cemento, varilla…)
+// y el nombre del concepto. Solo sugiere; el dueño confirma.
+(function (raiz) {
+  const sinAcentos = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const VACIAS = new Set(['para', 'compra', 'compre', 'ticket', 'total', 'subtotal', 'gasto', 'pago', 'pague', 'efectivo', 'cambio', 'venta', 'folio', 'fecha', 'precio', 'importe', 'cantidad', 'pesos', 'gracias', 'cliente']);
+  const palabras = (s) => sinAcentos(s).split(/[^a-z]+/).filter((w) => w.length >= 4 && !VACIAS.has(w)).map((w) => w.slice(0, 6)); // raíz corta: "varillas" ≈ "varilla"
+  const mismoProveedor = (a, b) => { const x = sinAcentos(a).replace(/[^a-z0-9]/g, ''), y = sinAcentos(b).replace(/[^a-z0-9]/g, ''); return x.length >= 4 && y.length >= 4 && (x.includes(y) || y.includes(x)); };
+
+  function sugerirConcepto(gasto, historial, conceptos) {
+    const puntos = new Map(), razon = new Map();
+    const sumar = (id, p, r) => { if (!id) return; puntos.set(id, (puntos.get(id) || 0) + p); if (!razon.has(id) || p >= 3) razon.set(id, r); };
+    const mias = new Set(palabras([gasto.nota, gasto.texto].filter(Boolean).join(' ')));
+    for (const g of historial || []) {
+      if (!g.concepto_id) continue;
+      if (gasto.proveedor && g.proveedor && mismoProveedor(gasto.proveedor, g.proveedor)) sumar(g.concepto_id, 3, 'mismo proveedor');
+      const comunes = palabras(g.nota).filter((w) => mias.has(w)).length;
+      if (comunes) sumar(g.concepto_id, Math.min(comunes, 2), 'compras parecidas');
+    }
+    for (const c of conceptos || []) { const n = palabras(c.concepto).filter((w) => mias.has(w)).length; if (n) sumar(c.id, 2 * n, 'nombre del concepto'); }
+    let mejor = null, max = 0, segundo = 0;
+    for (const [id, p] of puntos) { if (p > max) { segundo = max; max = p; mejor = id; } else if (p > segundo) segundo = p; }
+    if (!mejor || max < 1 || max === segundo) return null; // poca evidencia o empate: no adivina
+    return { concepto_id: mejor, razon: razon.get(mejor), puntos: max };
+  }
+  if (typeof module !== 'undefined') module.exports = { sugerirConcepto }; else raiz.sugerirConcepto = sugerirConcepto;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>// id: gastos.pantalla · tipo: pantalla · módulo: gastos · deps: gastos.esquema, conceptos.esquema, gastos.sugerir_concepto
 (function (raiz) {
   const { h, num, dinero, fechaCorta, nombreConcepto, hoy } = raiz.UI;
   raiz.PANTALLAS.gastos = async (ctx, p) => {
@@ -748,11 +776,18 @@ window.crearClienteSupabase = function (cfg) {
   };
 
   raiz.PANTALLAS.gasto_nuevo = async (ctx, p) => {
-    const [cs, tipos] = await Promise.all([ctx.conceptos(), ctx.listas('tipo_gasto')]);
+    const [cs, tipos, historial] = await Promise.all([ctx.conceptos(), ctx.listas('tipo_gasto'), ctx.datos.listar('gastos', { obra_id: ctx.obra.id })]);
     const dic = p && p.dictado && raiz.interpretarDictado ? raiz.interpretarDictado(p.dictado, { conceptos: cs, tipos, hoy: hoy() }) : null;
     let tipo = (dic && dic.tipo_id) || (tipos[0] ? tipos[0].id : null), estado = (dic && dic.estado) || 'pagado';
     const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Tipo' }, tipos.map((t) => h('button', { type: 'button', class: t.id === tipo ? 'on' : '', onclick: (e) => { tipo = t.id; chips.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === e.currentTarget)); } }, t.valor)));
     const est = h('div', { class: 'tabs' }, ['comprometido', 'pagado'].map((x) => h('button', { type: 'button', class: x === estado ? 'on' : '', onclick: (e) => { estado = x; est.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === e.currentTarget)); } }, x === 'pagado' ? 'Pagado' : 'Comprometido')));
+    // Concepto sugerido: aprende de los gastos ya capturados (proveedor y palabras). No pisa lo que elijas.
+    let auto = !(dic && dic.concepto_id); const pista = h('div', { class: 'mu' });
+    const sugerir = () => {
+      if (!auto || !raiz.sugerirConcepto) return;
+      const f = form.elements, s = raiz.sugerirConcepto({ nota: f.nota.value, proveedor: f.proveedor.value, texto: dic ? dic.texto : '' }, historial, cs);
+      f.concepto_id.value = s ? s.concepto_id : ''; pista.textContent = s ? `Concepto sugerido (${s.razon}). Cámbialo si no es.` : '';
+    };
     const msg = h('p', { class: 'mu', role: 'status' });
     const form = h('form', { class: 'form', onsubmit: async (ev) => {
       ev.preventDefault(); const d = new FormData(form); const monto = num(d.get('monto'));
@@ -768,11 +803,14 @@ window.crearClienteSupabase = function (cfg) {
       h('label', {}, 'Monto', h('input', { name: 'monto', type: 'number', step: '0.01', min: '0', inputMode: 'decimal', required: true, value: dic && dic.monto ? String(dic.monto) : '', style: 'font-size:22px;font-weight:700' })),
       h('label', {}, 'Descripción', h('input', { name: 'nota', placeholder: 'Ej. Cemento 120 bultos', value: (dic && dic.nota) || '' })),
       h('div', { class: 'lbl' }, 'Tipo'), chips,
-      h('label', {}, 'Concepto', h('select', { name: 'concepto_id' }, h('option', { value: '' }, 'Sin concepto (gasto general)'), cs.map((c) => h('option', { value: c.id, selected: !!dic && dic.concepto_id === c.id }, nombreConcepto(c))))),
+      h('label', {}, 'Concepto', h('select', { name: 'concepto_id', onchange: () => { auto = false; pista.textContent = ''; } }, h('option', { value: '' }, 'Sin concepto (gasto general)'), cs.map((c) => h('option', { value: c.id, selected: !!dic && dic.concepto_id === c.id }, nombreConcepto(c))))),
+      pista,
       h('label', {}, 'Fecha', h('input', { name: 'fecha', type: 'date', value: (dic && dic.fecha) || hoy() })),
       est,
       h('div', { class: 'grid2' }, h('label', {}, 'Proveedor', h('input', { name: 'proveedor', value: (dic && dic.proveedor) || '' })), h('label', {}, 'Comprobante', h('input', { name: 'comprobante', placeholder: 'Folio o enlace' }))),
       msg, h('button', { class: 'btn', type: 'submit' }, 'Guardar'), h('button', { class: 'btn lig', type: 'button', onclick: () => ctx.ir('gastos') }, 'Cancelar'));
+    form.elements.nota.addEventListener('change', sugerir); form.elements.proveedor.addEventListener('change', sugerir);
+    if (dic && !dic.concepto_id) sugerir();
     if (dic && !dic.monto) setTimeout(() => { const m = form.querySelector('[name=monto]'); if (m) m.focus(); }, 50);
     return { titulo: 'Nuevo gasto', sub: dic ? 'Dictado' : 'Gastos', contenido: form };
   };
@@ -1171,7 +1209,7 @@ window.crearClienteSupabase = function (cfg) {
   if (typeof module !== 'undefined') module.exports = { clasificarTexto }; else raiz.clasificarTexto = clasificarTexto;
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
-<script>// id: fotos.pantalla · tipo: pantalla · módulo: fotos · deps: fotos.esquema, fotos.drive, fotos.lector, fotos.pendientes, fotos.clasificar, gastos.esquema
+<script>// id: fotos.pantalla · tipo: pantalla · módulo: fotos · deps: fotos.esquema, fotos.drive, fotos.lector, fotos.pendientes, gastos.sugerir_concepto, fotos.clasificar, gastos.esquema
 // Las fotos viven en Google Drive (carpeta privada). Aquí solo se guarda el id, fecha, tipo y a qué se liga.
 // Foto de avance → concepto. Foto de ticket → gasto (nuevo o existente) y queda como su comprobante.
 // Sin Drive conectado (o sin señal) la foto se guarda en el teléfono y se sube después con un toque.
@@ -1225,7 +1263,17 @@ window.crearClienteSupabase = function (cfg) {
     const proveedor = campo('proveedor', { placeholder: 'Ej. Ferretería' }), fecha = campo('fecha', { type: 'date', value: hoy() });
     const gastoSel = h('select', { name: 'gasto_id', onchange: () => { nuevoGasto.hidden = !!gastoSel.value; } }, h('option', { value: '' }, 'Crear gasto nuevo con este ticket'), gs.map((g) => h('option', { value: g.id }, 'Ligar a: ' + nombreGasto(g))));
     const conceptoSel = (n) => h('select', { name: n }, h('option', { value: '' }, 'Ninguno'), cs.map((c) => h('option', { value: c.id, selected: c.id === p.concepto }, nombreConcepto(c))));
-    const nuevoGasto = h('div', { class: 'form' }, h('label', {}, 'Monto del ticket', monto), h('label', {}, 'Proveedor', proveedor), h('label', {}, 'Concepto del gasto', conceptoSel('concepto_gasto')));
+    const selGasto = conceptoSel('concepto_gasto'), pista = h('div', { class: 'mu' });
+    let textoLeido = '', conceptoAuto = true;
+    selGasto.addEventListener('change', () => { conceptoAuto = false; pista.textContent = ''; });
+    // Aprende de lo ya capturado: mismo proveedor o mismas palabras → sugiere el concepto.
+    function sugerir() {
+      if (!conceptoAuto || !raiz.sugerirConcepto) return;
+      const s = raiz.sugerirConcepto({ proveedor: proveedor.value, texto: textoLeido }, gs, cs);
+      selGasto.value = s ? s.concepto_id : ''; pista.textContent = s ? `Concepto sugerido (${s.razon}). Cámbialo si no es.` : '';
+    }
+    proveedor.addEventListener('change', sugerir);
+    const nuevoGasto = h('div', { class: 'form' }, h('label', {}, 'Monto del ticket', monto), h('label', {}, 'Proveedor', proveedor), h('label', {}, 'Concepto del gasto', selGasto), pista);
     const deTicket = h('div', { class: 'form' }, h('label', {}, 'Gasto', gastoSel), nuevoGasto);
     const deAvance = h('div', { class: 'form' }, h('label', {}, 'Concepto', conceptoSel('concepto_id')));
     const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Tipo de foto' }, [['avance', 'Foto obra'], ['ticket', 'Foto ticket']].map(([id, txt]) => h('button', { type: 'button', 'data-tipo': id, onclick: () => ponerTipo(id) }, txt)));
@@ -1238,11 +1286,13 @@ window.crearClienteSupabase = function (cfg) {
       foto = archivo; vista.src = URL.createObjectURL(archivo); vista.hidden = false; lectura.textContent = tipo === 'ticket' ? 'Leyendo el ticket… (la primera vez tarda hasta 1 min)' : 'Revisando la foto…';
       try {
         foto = await raiz.LECTOR.achicar(archivo);
-        const r = raiz.clasificarTexto(await raiz.LECTOR.leerTexto(foto, archivo));
+        textoLeido = await raiz.LECTOR.leerTexto(foto, archivo);
+        const r = raiz.clasificarTexto(textoLeido);
         const elegido = p.agregar === 'ticket' || p.agregar === 'avance';
         if (!elegido) ponerTipo(r.tipo);
         if (tipo === 'avance') { lectura.textContent = r.tipo === 'ticket' ? 'Parece ticket. Si lo es, toca "Foto ticket".' : 'Foto de obra lista. Guarda.'; return; }
         if (r.tipo === 'ticket') { if (r.proveedor && !proveedor.value) proveedor.value = r.proveedor; if (r.fecha) fecha.value = r.fecha; }
+        sugerir();
         if (r.monto) { monto.value = r.monto; lectura.textContent = `Leí ${dinero(r.monto)}. Revisa y toca Guardar.`; }
         else pedirMonto('No pude leer el monto. Escríbelo y toca Guardar.');
       } catch (e) { if (tipo === 'ticket') pedirMonto('No pude leer el ticket. Escribe el monto y toca Guardar.'); else lectura.textContent = ''; }
@@ -1413,7 +1463,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="0.7.0-20261127195140">
+</head><body data-version="0.8.0-20261127195430">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <section id="acceso">
   <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
