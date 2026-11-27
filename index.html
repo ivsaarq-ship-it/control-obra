@@ -317,7 +317,7 @@ window.crearClienteSupabase = function (cfg) {
     }
     function recargar() { return ir(vista, params); }
 
-    return elegirObra().then(() => ir('inicio')).then(() => ctx);
+    return elegirObra().then(() => ir('inicio')).then(() => { if (raiz.RESPALDO) raiz.RESPALDO.automatico(datos).then((x) => { if (x) aviso('Respaldo semanal guardado en tu Drive'); }); return ctx; });
   }
   raiz.iniciarApp = iniciarApp;
 })(window);
@@ -348,7 +348,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-<script>// id: inicio.pantalla · tipo: pantalla · módulo: inicio · deps: reporte.resumen, gastos.esquema, sueldos.esquema
+<script>// id: inicio.pantalla · tipo: pantalla · módulo: inicio · deps: reporte.resumen, gastos.esquema, sueldos.esquema, core.respaldo
 (function (raiz) {
   const { h, dinero, pct, barra, nombreConcepto, hoy, fechaCorta, lunes } = raiz.UI;
   raiz.PANTALLAS.inicio = async (ctx) => {
@@ -372,6 +372,8 @@ window.crearClienteSupabase = function (cfg) {
         h('div', { class: 'row' }, h('span', { class: 'lbl' }, 'Esta semana'), h('span', { class: 'mu' }, 'desde ' + fechaCorta(desde))),
         h('div', { class: 'row', style: 'margin-top:6px' }, h('span', {}, 'Gastos'), h('span', { class: 'b' }, dinero(semana(gastos)))),
         h('div', { class: 'row' }, h('span', {}, 'Sueldos'), h('span', { class: 'b' }, dinero(semana(sueldos))))),
+      raiz.RESPALDO && raiz.RESPALDO.toca() && raiz.botonRespaldo ? h('div', { class: 'c alerta' }, h('div', { class: 'b' }, raiz.RESPALDO.ultimo() ? `Sin respaldo hace ${raiz.RESPALDO.diasSin()} días` : 'Aún no respaldas tus datos'),
+        h('div', { class: 'mu' }, 'Guarda una copia en tu Drive.'), raiz.botonRespaldo(ctx)) : null,
       filas.length ? null : h('div', { class: 'c' }, h('div', { class: 'lbl' }, 'Aún no hay conceptos'), h('div', { class: 'mu' }, 'Agrega tus conceptos para ver avance y alertas.'),
         h('button', { class: 'btn', style: 'margin-top:10px', onclick: () => ctx.ir('conceptos') }, 'Ir a conceptos')),
     ];
@@ -735,7 +737,7 @@ window.crearClienteSupabase = function (cfg) {
 // Sube fotos a una carpeta privada del Drive del dueño. Permiso mínimo "drive.file":
 // la app solo ve lo que ella misma creó. Sin googleClientId en CONFIG, queda apagado (se usa pegar enlace).
 (function (raiz) {
-  const GIS = 'https://accounts.google.com/gsi/client', CARPETA = 'Control de obra - fotos', API = 'https://www.googleapis.com';
+  const GIS = 'https://accounts.google.com/gsi/client', CARPETA_FOTOS = 'Control de obra - fotos', API = 'https://www.googleapis.com';
   const cargar = (src) => new Promise((ok, mal) => { if (document.querySelector(`script[src="${src}"]`) && raiz.google) return ok(); const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => mal(new Error('Sin conexión con Google')); document.head.appendChild(s); });
   function crearDrive(clientId) {
     let token = null, vence = 0;
@@ -754,13 +756,14 @@ window.crearClienteSupabase = function (cfg) {
       const t = await pedirToken(); const r = await fetch(url, Object.assign({}, op, { headers: Object.assign({ Authorization: 'Bearer ' + t }, (op && op.headers) || {}) }));
       if (!r.ok) throw new Error('Drive respondió ' + r.status); return r.json();
     }
-    async function carpeta() {
-      let id = null; try { id = localStorage.getItem('driveCarpeta'); } catch (e) { /* sin almacenamiento */ }
+    async function carpeta(nombre) {
+      const CARPETA = nombre || CARPETA_FOTOS, clave = nombre ? 'driveCarpeta:' + nombre : 'driveCarpeta';
+      let id = null; try { id = localStorage.getItem(clave); } catch (e) { /* sin almacenamiento */ }
       if (id) return id;
       const q = encodeURIComponent(`name='${CARPETA}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
       const r = await llamar(`${API}/drive/v3/files?q=${q}&fields=files(id)`);
       id = r.files && r.files[0] ? r.files[0].id : (await llamar(`${API}/drive/v3/files?fields=id`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: CARPETA, mimeType: 'application/vnd.google-apps.folder' }) })).id;
-      try { localStorage.setItem('driveCarpeta', id); } catch (e) { /* sin almacenamiento */ }
+      try { localStorage.setItem(clave, id); } catch (e) { /* sin almacenamiento */ }
       return id;
     }
     return {
@@ -770,17 +773,20 @@ window.crearClienteSupabase = function (cfg) {
       // Baja la foto (solo si ya hay permiso vigente; no abre ventanas).
       async bajar(id) { if (!(token && Date.now() < vence)) return null; const r = await fetch(`${API}/drive/v3/files/${encodeURIComponent(id)}?alt=media`, { headers: { Authorization: 'Bearer ' + token } }); return r.ok ? r.blob() : null; },
       preparar() { if (clientId) cargar(GIS).catch(() => {}); }, // así la ventana de Google abre en el mismo toque
-      async subir(blob, nombre) {
-        const meta = { name: nombre, parents: [await carpeta()] };
+      async subir(blob, nombre, enCarpeta) {
+        const meta = { name: nombre, parents: [await carpeta(enCarpeta)] };
         const cuerpo = new FormData();
         cuerpo.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
         cuerpo.append('file', blob);
         try { return (await llamar(`${API}/upload/drive/v3/files?uploadType=multipart&fields=id`, { method: 'POST', body: cuerpo })).id; }
-        catch (e) { try { localStorage.removeItem('driveCarpeta'); } catch (x) { /* nada */ } throw e; } // si borraron la carpeta, la crea la próxima vez
+        catch (e) { try { localStorage.removeItem(enCarpeta ? 'driveCarpeta:' + enCarpeta : 'driveCarpeta'); } catch (x) { /* nada */ } throw e; } // si borraron la carpeta, la crea la próxima vez
       },
     };
   }
   raiz.crearDrive = crearDrive;
+  // Un solo Drive para toda la app (se rehace si cambia el ID de Google).
+  let dv = null, dvId;
+  raiz.driveApp = () => { const id = (raiz.CONFIG || {}).googleClientId; if (!dv || dvId !== id) { dvId = id; dv = crearDrive(id); } return dv; };
 })(window);
 </script>
 <script>// id: fotos.lector · tipo: servicio_externo · módulo: fotos · deps: ninguna
@@ -866,8 +872,7 @@ window.crearClienteSupabase = function (cfg) {
 (function (raiz) {
   const { h, nombreConcepto, hoy, fechaCorta, dinero, num } = raiz.UI;
   const enlaceDrive = (x) => (/^https:\/\/(drive|docs)\.google\.com\//.test(x) ? x : 'https://drive.google.com/file/d/' + encodeURIComponent(x) + '/view');
-  let dv = null, dvId;
-  const drive = () => { const id = (raiz.CONFIG || {}).googleClientId; if (!dv || dvId !== id) { dvId = id; dv = raiz.crearDrive ? raiz.crearDrive(id) : { disponible: () => false }; } return dv; };
+  const drive = () => (raiz.driveApp ? raiz.driveApp() : { disponible: () => false });
 
   // Sube a Drive y crea el registro. Si no se puede, la deja en el teléfono.
   async function subirYRegistrar(ctx, blob, m) {
@@ -1035,9 +1040,48 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-<script>// id: ajustes.pantalla · tipo: pantalla · módulo: ajustes · deps: acceso.reglas, obra.pantalla
+<script>// id: core.respaldo · tipo: proceso_base · módulo: core · deps: core.datos, fotos.drive
+// Copia de todos los datos en el Drive del dueño (carpeta "Control de obra - respaldos"), un archivo por respaldo.
+// Automático cada 7 días si Google ya dio permiso; si no, botón "Respaldar ahora" (Inicio avisa y Más).
+(function (raiz) {
+  const TABLAS = ['obras', 'listas', 'conceptos', 'personas', 'gastos', 'destajos', 'sueldos', 'avances', 'estimaciones', 'estimacion_conceptos', 'fotos', 'tareas', 'tarea_dependencias', 'bitacora_notas'];
+  const CARPETA = 'Control de obra - respaldos', DIAS = 7;
+  const leer = () => { try { return Number(localStorage.getItem('ultimoRespaldo')) || 0; } catch (e) { return 0; } };
+  async function armar(datos) {
+    const tablas = {};
+    for (const t of TABLAS) tablas[t] = await datos.listar(t, {});
+    return { app: 'control-obra', formato: 1, fecha: new Date().toISOString(), tablas };
+  }
+  raiz.RESPALDO = {
+    TABLAS, armar,
+    ultimo: leer,
+    diasSin: () => (leer() ? Math.floor((Date.now() - leer()) / 86400000) : null),
+    toca: () => !leer() || Date.now() - leer() > DIAS * 86400000,
+    async hacer(datos) {
+      const r = await armar(datos), n = Object.values(r.tablas).reduce((s, x) => s + x.length, 0);
+      const nombre = 'respaldo ' + r.fecha.slice(0, 16).replace('T', ' ').replace(':', '-') + '.json';
+      await raiz.driveApp().subir(new Blob([JSON.stringify(r)], { type: 'application/json' }), nombre, CARPETA);
+      try { localStorage.setItem('ultimoRespaldo', String(Date.now())); } catch (e) { /* sin almacenamiento */ }
+      return n;
+    },
+    // Al abrir la app: solo si ya toca y Google ya dio permiso (no abre ventanas).
+    async automatico(datos) {
+      const d = raiz.driveApp && raiz.driveApp();
+      if (!d || !d.disponible() || !d.tienePermiso() || !this.toca()) return false;
+      try { await this.hacer(datos); return true; } catch (e) { return false; }
+    },
+  };
+})(window);
+</script>
+<script>// id: ajustes.pantalla · tipo: pantalla · módulo: ajustes · deps: acceso.reglas, obra.pantalla, core.respaldo
 (function (raiz) {
   const { h } = raiz.UI;
+  const botonRespaldo = (ctx, clase) => h('button', { class: clase || 'btn', onclick: async (e) => {
+    const b = e.currentTarget; b.disabled = true; b.textContent = 'Respaldando…';
+    try { const n = await raiz.RESPALDO.hacer(ctx.datos); ctx.aviso(`Respaldo guardado en tu Drive (${n} registros)`); ctx.recargar(); }
+    catch (err) { ctx.aviso('No se pudo respaldar: ' + err.message); b.disabled = false; b.textContent = 'Respaldar ahora'; }
+  } }, 'Respaldar ahora');
+  raiz.botonRespaldo = botonRespaldo;
   raiz.PANTALLAS.mas = async (ctx) => {
     const obras = await ctx.datos.listar('obras', {}, ['creado']);
     const ir = (txt, v, p, desc) => h('button', { class: 'c', style: 'text-align:left;border:0', onclick: () => ctx.ir(v, p) }, h('div', { class: 'lbl' }, txt), desc ? h('div', { class: 'mu' }, desc) : null);
@@ -1050,6 +1094,10 @@ window.crearClienteSupabase = function (cfg) {
       obras.length > 1 ? h('label', { class: 'form' }, h('span', { class: 'lbl' }, 'Cambiar de obra'), h('select', { onchange: (e) => { ctx.usarObra(obras.find((o) => o.id === e.target.value)); ctx.ir('inicio'); } },
         obras.map((o) => h('option', { value: o.id, selected: o.id === ctx.obra.id }, o.nombre)))) : null,
       ir('+ Nueva obra', 'obra', { nueva: true }),
+      h('div', { class: 'cap' }, 'Respaldo'),
+      raiz.RESPALDO ? h('div', { class: 'c form' }, h('div', { class: 'mu', id: 'estadoRespaldo' }, raiz.RESPALDO.ultimo() ? 'Último respaldo: ' + new Date(raiz.RESPALDO.ultimo()).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Aún sin respaldo'),
+        h('div', { class: 'mu' }, 'Copia de todos tus datos en tu Drive, carpeta "Control de obra - respaldos". Se hace sola cada semana.'),
+        botonRespaldo(ctx)) : null,
       h('div', { class: 'cap' }, 'Seguridad'),
       h('div', { class: 'c form' }, h('p', { id: 'huellas', class: 'mu', style: 'margin:0' }),
         h('button', { id: 'btnRegHuella', class: 'btn' }, 'Registrar huella / Face ID'),
@@ -1059,7 +1107,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="0.4.3-20261127190300">
+</head><body data-version="0.5.0-20261127192737">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <section id="acceso">
   <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
