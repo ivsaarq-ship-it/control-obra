@@ -545,7 +545,9 @@ window.crearClienteSupabase = function (cfg) {
       raiz.addEventListener('online', subir);
       setInterval(() => { if (datos.estado().pendientes) subir(); }, 30000);
     }
-    return elegirObra().then(() => ir('inicio')).then(() => { if (raiz.RESPALDO) raiz.RESPALDO.automatico(datos).then((x) => { if (x) aviso('Respaldo semanal guardado en tu Drive'); }); return ctx; });
+    // Link directo: …/#aviso abre Más en "Aviso del lunes".
+    let directo = false;
+    return elegirObra().then(() => { directo = (raiz.location && raiz.location.hash) === '#aviso' && !!ctx.obra; return ir(directo ? 'mas' : 'inicio'); }).then(() => { if (directo) { const b = document.getElementById('btnAviso'); if (b) { b.scrollIntoView({ block: 'center' }); b.style.outline = '3px solid var(--acento)'; } } if (raiz.RESPALDO) raiz.RESPALDO.automatico(datos).then((x) => { if (x) aviso('Respaldo semanal guardado en tu Drive'); }); return ctx; });
   }
   raiz.iniciarApp = iniciarApp;
 })(window);
@@ -1617,7 +1619,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="1.2.1-20261127205041">
+</head><body data-version="1.2.2-20261127210350">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <section id="acceso">
   <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
