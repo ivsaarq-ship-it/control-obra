@@ -57,7 +57,7 @@ button { cursor:pointer; }
 .nav button { flex:1; border:0; background:none; padding:8px 0 12px; font-size:11px; color:#6b6b6b; display:flex; flex-direction:column; align-items:center; gap:2px; }
 .nav button.on { color:var(--acento-txt); font-weight:700; }
 .nav svg { width:22px; height:22px; }
-.menu-fab { position:fixed; right:max(18px, calc(50% - 262px)); bottom:150px; display:grid; gap:8px; z-index:5; }
+.menu-fab { position:fixed; right:max(18px, calc(50% - 262px)); bottom:214px; display:grid; gap:8px; z-index:5; }
 .menu-fab button { background:var(--oscuro); color:#fff; border:0; border-radius:12px; padding:14px 18px; font-weight:600; text-align:left; font-size:15px; }
 .persona { border-top:1px solid #eee; padding:10px 0 4px; display:grid; gap:6px; } .persona.hecho { opacity:.7; }
 .dias { display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; }
@@ -72,6 +72,8 @@ button { cursor:pointer; }
 .fila-fab { display:flex; gap:6px; justify-content:flex-end; }
 .menu-fab .gal { background:#fff; color:var(--oscuro); border:1px solid #c9c6bf; }
 .fab { position:fixed; right:max(18px, calc(50% - 262px)); bottom:84px; width:56px; height:56px; border-radius:28px; background:var(--acento); color:#fff; border:0; font-size:30px; box-shadow:0 4px 10px #0003; }
+.fab.mic { bottom:150px; background:var(--oscuro); font-size:24px; }
+.fab[hidden] { display:none; }
 table { width:100%; border-collapse:collapse; font-size:12px; } td, th { padding:7px 4px; text-align:right; border-bottom:1px solid #eee; }
 th { color:var(--tenue); font-weight:600; font-size:11px; } td:first-child, th:first-child { text-align:left; } tr.al td { background:#fdeeee; }
 .tabla { overflow-x:auto; }
@@ -490,9 +492,11 @@ window.crearClienteSupabase = function (cfg) {
         .then((t) => { capa.remove(); ir('gasto_nuevo', { dictado: t }); })
         .catch((e) => { capa.remove(); aviso(e.message); });
     };
-    const menuFab = h('div', { class: 'menu-fab', hidden: true }, h('div', { class: 'fila-fab' }, h('button', { onclick: () => ctx.dictar() }, '🎤 Dictar gasto')), fila('avance', 'Foto obra'), fila('ticket', 'Foto ticket'));
+    const menuFab = h('div', { class: 'menu-fab', hidden: true }, fila('avance', 'Foto obra'), fila('ticket', 'Foto ticket'));
     const fab = h('button', { class: 'fab', 'aria-label': 'Tomar foto', onclick: () => { menuFab.hidden = !menuFab.hidden; } }, '+');
-    cont.replaceChildren(h('div', { class: 'app' }, top, red, cuerpo), camara, galeria, menuFab, fab, nav);
+    // Micrófono fijo arriba del "+": un toque = dictar gasto (dueño: "que aparezca arribita del más").
+    const mic = h('button', { class: 'fab mic', 'aria-label': 'Dictar gasto', onclick: () => { menuFab.hidden = true; ctx.dictar(); } }, '🎤');
+    cont.replaceChildren(h('div', { class: 'app' }, top, red, cuerpo), camara, galeria, menuFab, mic, fab, nav);
 
     // Lo que cambia poco se guarda en memoria y se refresca al guardar algo.
     ctx.conceptos = async () => (ctx.cache.conceptos ||= await datos.listar('conceptos', { obra_id: ctx.obra.id }, ['orden', 'clave', 'creado']));
@@ -512,7 +516,7 @@ window.crearClienteSupabase = function (cfg) {
       const base = v === 'gasto_nuevo' ? 'gastos' : ['reporte', 'sueldos', 'bitacora', 'calendario', 'fotos', 'estimaciones', 'obra'].includes(v) ? 'mas' : v;
       nav.querySelectorAll('[data-ir]').forEach((b) => b.classList.toggle('on', b.dataset.ir === base));
       if (!ctx.obra && v !== 'obra') { vista = 'obra'; params = { nueva: true }; }
-      fab.hidden = !ctx.obra || ['obra', 'mas', 'fotos'].includes(vista);
+      fab.hidden = !ctx.obra || ['obra', 'mas', 'fotos'].includes(vista); mic.hidden = fab.hidden;
       nav.hidden = !ctx.obra;
       const pantalla = raiz.PANTALLAS[vista];
       cuerpo.replaceChildren(h('p', { class: 'vacio' }, 'Cargando…'));
@@ -1613,7 +1617,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="1.2.0-20261127203405">
+</head><body data-version="1.2.1-20261127205041">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <section id="acceso">
   <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
