@@ -59,6 +59,11 @@ button { cursor:pointer; }
 .nav svg { width:22px; height:22px; }
 .menu-fab { position:fixed; right:max(18px, calc(50% - 262px)); bottom:150px; display:grid; gap:8px; z-index:5; }
 .menu-fab button { background:var(--oscuro); color:#fff; border:0; border-radius:12px; padding:14px 18px; font-weight:600; text-align:left; font-size:15px; }
+.persona { border-top:1px solid #eee; padding:10px 0 4px; display:grid; gap:6px; } .persona.hecho { opacity:.7; }
+.dias { display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; }
+.dia { border:1px solid #c9c6bf; background:#fff; border-radius:8px; padding:10px 0; font-weight:700; font-size:14px; }
+.dia.on { background:var(--oscuro); color:#fff; border-color:var(--oscuro); }
+.dia.medio { background:linear-gradient(135deg, var(--oscuro) 50%, #fff 50%); color:#fff; text-shadow:0 0 2px #000; }
 .red { background:#fff3d6; color:#6b4a00; font-size:13px; font-weight:600; padding:8px 16px; text-align:center; }
 .red.off { background:#3a3f47; color:#fff; }
 .capa-voz { position:fixed; inset:0; background:#0007; display:flex; align-items:flex-end; justify-content:center; padding:16px; z-index:20; }
@@ -873,7 +878,25 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-<script>// id: sueldos.pantalla · tipo: pantalla · módulo: sueldos · deps: sueldos.esquema, conceptos.esquema, avances.esquema
+<script>// id: sueldos.nomina · tipo: regla_calculo · módulo: sueldos · deps: sueldos.esquema
+// Nómina de la semana a partir de la lista de asistencia: cada día vale 0, ½ o 1. Días × tarifa por día.
+// Quien ya tiene sueldo registrado esa semana no se vuelve a pagar.
+(function (raiz) {
+  const CICLO = [0, 1, 0.5]; // tocar un día: falta → completo → medio → falta
+  const siguiente = (v) => CICLO[(CICLO.indexOf(v) + 1) % CICLO.length];
+  function calcularNomina(asistencia, personas, yaRegistrados) {
+    const ya = new Set(yaRegistrados || []);
+    const filas = (personas || []).map((p) => {
+      const dias = (asistencia[p.id] || []).reduce((s, v) => s + (Number(v) || 0), 0), tarifa = Number(p.tarifa_dia) || 0;
+      return { persona_id: p.id, nombre: p.nombre, dias, tarifa, monto: Math.round(dias * tarifa * 100) / 100, registrado: ya.has(p.id), sinTarifa: dias > 0 && !tarifa };
+    });
+    const porPagar = filas.filter((f) => !f.registrado && f.dias > 0 && f.tarifa > 0);
+    return { filas, porPagar, total: Math.round(porPagar.reduce((s, f) => s + f.monto, 0) * 100) / 100, faltanTarifas: filas.filter((f) => !f.registrado && f.sinTarifa).map((f) => f.nombre) };
+  }
+  if (typeof module !== 'undefined') module.exports = { calcularNomina, siguiente }; else { raiz.calcularNomina = calcularNomina; raiz.siguienteAsistencia = siguiente; }
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>// id: sueldos.pantalla · tipo: pantalla · módulo: sueldos · deps: sueldos.esquema, conceptos.esquema, avances.esquema, sueldos.nomina
 (function (raiz) {
   const { h, num, dinero, barra, nombreConcepto, hoy, fechaCorta, lunes, masDias: mas } = raiz.UI;
   raiz.PANTALLAS.sueldos = async (ctx, p) => {
@@ -907,10 +930,39 @@ window.crearClienteSupabase = function (cfg) {
         h('label', {}, 'Estado', h('select', { name: 'estado' }, h('option', { value: 'pagado' }, 'Pagado'), h('option', { value: 'comprometido' }, 'Comprometido'))), msg, h('button', { class: 'btn', type: 'submit' }, 'Guardar'));
       conNueva(form);
       const total = deSem.reduce((s, x) => s + num(x.monto), 0);
+      // Lista de asistencia (nómina en 1 toque). El borrador vive en el teléfono hasta que se paga.
+      const CLAVE = `asistencia:${ctx.obra.id}:${sem}`, DIAS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+      let asis = {}; try { asis = JSON.parse(localStorage.getItem(CLAVE) || '{}'); } catch (e) { asis = {}; }
+      const guardarAsis = () => { try { localStorage.setItem(CLAVE, JSON.stringify(asis)); } catch (e) { /* sin almacenamiento */ } };
+      const yaReg = deSem.map((s) => s.persona_id);
+      const lista = h('div', { class: 'c form' });
+      const pagar = async (estado, boton) => {
+        const r = raiz.calcularNomina(asis, personas, yaReg); if (!r.porPagar.length) return;
+        boton.disabled = true;
+        for (const f of r.porPagar) await ctx.datos.crear('sueldos', { obra_id: ctx.obra.id, persona_id: f.persona_id, modalidad: 'semana', semana_inicio: sem, fecha: fin > hoy() ? hoy() : fin, dias: f.dias, tarifa: f.tarifa, monto: f.monto, estado });
+        ctx.aviso(`${estado === 'pagado' ? 'Nómina pagada' : 'Nómina guardada por pagar'}: ${dinero(r.total)} a ${r.porPagar.length} persona${r.porPagar.length > 1 ? 's' : ''}`); ctx.recargar();
+      };
+      function pintar() {
+        const r = raiz.calcularNomina(asis, personas, yaReg);
+        lista.replaceChildren(...[h('div', { class: 'row' }, h('span', { class: 'lbl' }, 'Lista de asistencia'), h('span', { class: 'mu' }, 'Toca: día completo → medio → falta')),
+          personas.length ? null : h('p', { class: 'vacio' }, 'Da de alta a tu gente con el botón de abajo (Persona nueva).'),
+          r.filas.map((f) => h('div', { class: 'persona' + (f.registrado ? ' hecho' : '') },
+            h('div', { class: 'row' }, h('span', { class: 'b' }, f.nombre), f.registrado ? h('span', { class: 'tag p' }, '✓ registrado') : h('span', { class: 'b' }, f.dias ? `${f.dias} d · ${dinero(f.monto)}` : '')),
+            f.registrado ? null : h('div', { class: 'dias' }, DIAS.map((d, i) => { const v = (asis[f.persona_id] || [])[i] || 0;
+              return h('button', { type: 'button', class: 'dia' + (v === 1 ? ' on' : v ? ' medio' : ''), 'aria-label': `${f.nombre} día ${i + 1}: ${v === 1 ? 'completo' : v ? 'medio' : 'falta'}`,
+                onclick: () => { const a = asis[f.persona_id] || [0, 0, 0, 0, 0, 0, 0]; a[i] = raiz.siguienteAsistencia(a[i] || 0); asis[f.persona_id] = a; guardarAsis(); pintar(); } }, d); })),
+            !f.registrado && !f.tarifa ? h('label', { class: 'mu' }, 'Tarifa por día', h('input', { type: 'number', min: '0', step: '0.01', inputMode: 'decimal', 'aria-label': 'Tarifa por día de ' + f.nombre,
+              onchange: async (e) => { const t = num(e.target.value); if (!(t > 0)) return; await ctx.datos.cambiar('personas', f.persona_id, { tarifa_dia: t }); const x = personas.find((y) => y.id === f.persona_id); x.tarifa_dia = t; pintar(); } })) : null)),
+          r.faltanTarifas.length ? h('div', { class: 'mu rojo' }, 'Falta tarifa de: ' + r.faltanTarifas.join(', ')) : null,
+          r.porPagar.length ? [h('button', { class: 'btn', onclick: (e) => pagar('pagado', e.currentTarget) }, `Pagar semana · ${dinero(r.total)}`),
+            h('button', { class: 'btn lig', onclick: (e) => pagar('comprometido', e.currentTarget) }, 'Guardar sin pagar todavía')] : null].flat(Infinity).filter(Boolean));
+      }
+      pintar();
       return { titulo: 'Sueldos', sub: `Semana ${fechaCorta(sem)} – ${fechaCorta(fin)}`, contenido: [tabs,
         h('div', { class: 'row' }, h('button', { class: 'btn lig', style: 'width:auto', 'aria-label': 'Semana anterior', onclick: () => ctx.ir('sueldos', { modo, semana: mas(sem, -7) }) }, '‹'), h('span', { class: 'lbl' }, `${fechaCorta(sem)} – ${fechaCorta(fin)}`), h('button', { class: 'btn lig', style: 'width:auto', 'aria-label': 'Semana siguiente', onclick: () => ctx.ir('sueldos', { modo, semana: mas(sem, 7) }) }, '›')),
+        lista, deSem.length ? h('div', { class: 'cap' }, 'Registrado esta semana') : null,
         deSem.length ? deSem.map((s) => h('div', { class: 'c' }, h('div', { class: 'row' }, h('span', { class: 'lbl' }, (pMap[s.persona_id] || {}).nombre || 'Persona'), h('span', { class: 'b' }, dinero(s.monto))),
-          h('div', { class: 'row' }, h('span', { class: 'mu' }, s.dias ? `${num(s.dias)} días × ${dinero(s.tarifa)}` : ''), h('span', { class: 'tag ' + (s.estado === 'pagado' ? 'p' : 'c2') }, s.estado === 'pagado' ? 'Pagado' : 'Comprometido')))) : h('p', { class: 'vacio' }, 'Sin sueldos esta semana.'),
+          h('div', { class: 'row' }, h('span', { class: 'mu' }, s.dias ? `${num(s.dias)} días × ${dinero(s.tarifa)}` : ''), s.estado === 'pagado' ? h('span', { class: 'tag p' }, 'Pagado') : h('button', { class: 'tag c2', style: 'border:0', title: 'Marcar como pagado', onclick: async () => { await ctx.datos.cambiar('sueldos', s.id, { estado: 'pagado' }); ctx.aviso('Marcado como pagado'); ctx.recargar(); } }, 'Por pagar · tocar al pagar')))) : null,
         h('div', { class: 'row', style: 'padding:0 4px' }, h('span', { class: 'lbl' }, 'Total semana'), h('span', { class: 'b' }, dinero(total))),
         h('button', { class: 'btn o2', onclick: () => { form.hidden = !form.hidden; } }, '+ Agregar sueldo'), form] };
     }
@@ -1463,7 +1515,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="0.8.0-20261127195430">
+</head><body data-version="0.9.0-20261127200028">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <section id="acceso">
   <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
