@@ -736,12 +736,13 @@ window.crearClienteSupabase = function (cfg) {
   const cargar = (src) => new Promise((ok, mal) => { if (document.querySelector(`script[src="${src}"]`) && raiz.google) return ok(); const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => mal(new Error('Sin conexión con Google')); document.head.appendChild(s); });
   function crearDrive(clientId) {
     let token = null, vence = 0;
+    try { const g = JSON.parse(localStorage.getItem('drivePermiso') || 'null'); if (g && g.vence > Date.now()) { token = g.token; vence = g.vence; } } catch (e) { /* sin almacenamiento */ }
     async function pedirToken() {
       if (token && Date.now() < vence) return token;
       await cargar(GIS);
       return new Promise((ok, mal) => {
         const c = raiz.google.accounts.oauth2.initTokenClient({ client_id: clientId, scope: 'https://www.googleapis.com/auth/drive.file',
-          callback: (r) => { if (r.error) return mal(new Error('Google no dio permiso')); token = r.access_token; vence = Date.now() + (r.expires_in - 60) * 1000; ok(token); },
+          callback: (r) => { if (r.error) return mal(new Error('Google no dio permiso')); token = r.access_token; vence = Date.now() + (r.expires_in - 60) * 1000; try { localStorage.setItem('drivePermiso', JSON.stringify({ token, vence })); } catch (e) { /* nada */ } ok(token); },
           error_callback: () => mal(new Error('Se cerró la ventana de Google')) });
         c.requestAccessToken({ prompt: '' });
       });
@@ -761,6 +762,10 @@ window.crearClienteSupabase = function (cfg) {
     }
     return {
       disponible: () => !!clientId,
+      tienePermiso: () => !!(token && Date.now() < vence),
+      pedirPermiso: () => pedirToken(),
+      // Baja la foto (solo si ya hay permiso vigente; no abre ventanas).
+      async bajar(id) { if (!(token && Date.now() < vence)) return null; const r = await fetch(`${API}/drive/v3/files/${encodeURIComponent(id)}?alt=media`, { headers: { Authorization: 'Bearer ' + token } }); return r.ok ? r.blob() : null; },
       preparar() { if (clientId) cargar(GIS).catch(() => {}); }, // así la ventana de Google abre en el mismo toque
       async subir(blob, nombre) {
         const meta = { name: nombre, parents: [await carpeta()] };
@@ -787,9 +792,17 @@ window.crearClienteSupabase = function (cfg) {
     cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
     return new Promise((ok) => cv.toBlob((b) => ok(b || archivo), 'image/jpeg', 0.82));
   }
-  async function leerTexto(blob) {
+  async function paraLeer(blob) {
+    try {
+      const img = await createImageBitmap(blob); const k = Math.min(1, 2000 / Math.max(img.width, img.height));
+      const cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+      const c = cv.getContext('2d'); c.filter = 'grayscale(1) contrast(1.6)'; c.drawImage(img, 0, 0, cv.width, cv.height);
+      return await new Promise((ok) => cv.toBlob((b) => ok(b || blob), 'image/png'));
+    } catch (e) { return blob; }
+  }
+  async function leerTexto(blob, original) {
     await cargar(TESS);
-    const r = await raiz.Tesseract.recognize(blob, 'spa');
+    const r = await raiz.Tesseract.recognize(await paraLeer(original || blob), 'spa');
     return (r && r.data && r.data.text) || '';
   }
   raiz.LECTOR = { achicar, leerTexto };
@@ -799,12 +812,15 @@ window.crearClienteSupabase = function (cfg) {
 // Fotos guardadas en el teléfono (IndexedDB) mientras Drive no está conectado o no hay señal.
 // Se suben solas a Drive después. Ojo: si se borran los datos de la app en el teléfono, se pierden.
 (function (raiz) {
-  const abrir = () => new Promise((ok, mal) => { const r = indexedDB.open('control-obra', 1); r.onupgradeneeded = () => r.result.createObjectStore('fotos', { keyPath: 'id' }); r.onsuccess = () => ok(r.result); r.onerror = () => mal(r.error); });
-  const op = async (modo, f) => { const db = await abrir(); return new Promise((ok, mal) => { const tx = db.transaction('fotos', modo), q = f(tx.objectStore('fotos')); tx.oncomplete = () => ok(q && q.result); tx.onerror = () => mal(tx.error); }); };
+  const abrir = () => new Promise((ok, mal) => { const r = indexedDB.open('control-obra', 2); r.onupgradeneeded = () => { const db = r.result; if (!db.objectStoreNames.contains('fotos')) db.createObjectStore('fotos', { keyPath: 'id' }); if (!db.objectStoreNames.contains('miniaturas')) db.createObjectStore('miniaturas', { keyPath: 'drive_id' }); }; r.onsuccess = () => ok(r.result); r.onerror = () => mal(r.error); });
+  const op = async (modo, f, tabla) => { const db = await abrir(); const t = tabla || 'fotos'; return new Promise((ok, mal) => { const tx = db.transaction(t, modo), q = f(tx.objectStore(t)); tx.oncomplete = () => ok(q && q.result); tx.onerror = () => mal(tx.error); }); };
   raiz.PENDIENTES = {
     guardar: (reg) => op('readwrite', (s) => s.put(Object.assign({ id: 'p' + Date.now() + Math.random().toString(36).slice(2, 6) }, reg))),
     listar: () => op('readonly', (s) => s.getAll()).then((x) => x || []),
     borrar: (id) => op('readwrite', (s) => s.delete(id)),
+    // Miniatura chica (unos 15 KB) para ver la foto sin descargarla de Drive cada vez.
+    guardarMini: (drive_id, blob) => op('readwrite', (s) => s.put({ drive_id, blob }), 'miniaturas'),
+    mini: (drive_id) => op('readonly', (s) => s.get(drive_id), 'miniaturas').then((x) => x && x.blob),
   };
 })(window);
 </script>
@@ -853,6 +869,7 @@ window.crearClienteSupabase = function (cfg) {
   // Sube a Drive y crea el registro. Si no se puede, la deja en el teléfono.
   async function subirYRegistrar(ctx, blob, m) {
     const id = await drive().subir(blob, `${m.fecha} ${m.tipo} ${Date.now()}.jpg`);
+    try { await raiz.PENDIENTES.guardarMini(id, await raiz.LECTOR.achicar(blob, 360)); } catch (e) { /* solo es la vista previa */ }
     await ctx.datos.crear('fotos', { obra_id: m.obra_id, tipo: m.tipo, drive_id: id, fecha: m.fecha, concepto_id: m.concepto_id, gasto_id: m.gasto_id, nota: m.nota });
     if (m.gasto_id && !m.gasto_comprobante) await ctx.datos.cambiar('gastos', m.gasto_id, { comprobante: enlaceDrive(id) });
   }
@@ -871,8 +888,17 @@ window.crearClienteSupabase = function (cfg) {
     const nombreGasto = (g) => (g ? [g.proveedor || g.nota || 'Gasto', dinero(g.monto), fechaCorta(g.fecha)].join(' · ') : 'Ticket');
     const fs = todas.filter((f) => (modo === 'tickets') === (f.tipo === 'ticket'));
     const grupos = {}; fs.forEach((f) => { (grupos[modo === 'concepto' ? nombreConcepto(cMap[f.concepto_id]) : f.fecha] ||= []).push(f); });
-    const ficha = (f) => h('a', { href: enlaceDrive(f.drive_id), target: '_blank', rel: 'noopener', class: 'c', style: 'height:92px;display:flex;align-items:flex-end;background:linear-gradient(135deg,#b9b2a4,#8d8576);color:#fff;font-size:12px;text-decoration:none' },
-      ((f.tipo === 'ticket' ? nombreGasto(gMap[f.gasto_id]) : (f.concepto_id ? nombreConcepto(cMap[f.concepto_id]) : '')) + (f.nota ? ' · ' + f.nota : '')) || 'Foto');
+    const sinMini = [];
+    const ficha = (f) => {
+      const a = h('a', { href: enlaceDrive(f.drive_id), target: '_blank', rel: 'noopener', class: 'c', 'data-drive': f.drive_id, style: 'height:120px;display:flex;align-items:flex-end;background:linear-gradient(135deg,#b9b2a4,#8d8576) center/cover;color:#fff;font-size:12px;text-decoration:none;text-shadow:0 1px 3px #000' },
+        ((f.tipo === 'ticket' ? nombreGasto(gMap[f.gasto_id]) : (f.concepto_id ? nombreConcepto(cMap[f.concepto_id]) : 'Avance')) + (f.nota ? ' · ' + f.nota : '')));
+      raiz.PENDIENTES.mini(f.drive_id).then(async (b) => {
+        if (!b) { const g = await drive().bajar(f.drive_id).catch(() => null); if (g) { b = await raiz.LECTOR.achicar(g, 360); raiz.PENDIENTES.guardarMini(f.drive_id, b).catch(() => {}); } }
+        if (b) a.style.backgroundImage = `linear-gradient(transparent 55%, #0008), url(${URL.createObjectURL(b)})`; else { sinMini.push(f); botonMini.hidden = false; }
+      }).catch(() => {});
+      return a;
+    };
+    const botonMini = h('button', { class: 'btn lig', hidden: true, onclick: async () => { try { await drive().pedirPermiso(); ctx.ir('fotos', { modo }); } catch (e) { ctx.aviso(e.message); } } }, 'Ver miniaturas (pide permiso a Google)');
 
     // ---- Formulario ----
     let tipo = p.agregar === 'ticket' ? 'ticket' : 'avance', foto = null;
@@ -898,8 +924,11 @@ window.crearClienteSupabase = function (cfg) {
       foto = archivo; vista.src = URL.createObjectURL(archivo); vista.hidden = false; lectura.textContent = 'Leyendo la foto…';
       try {
         foto = await raiz.LECTOR.achicar(archivo);
-        const r = raiz.clasificarTexto(await raiz.LECTOR.leerTexto(foto));
-        ponerTipo(r.tipo);
+        const r = raiz.clasificarTexto(await raiz.LECTOR.leerTexto(foto, archivo));
+        const elegido = p.agregar === 'ticket' || p.agregar === 'avance';
+        if (!elegido) ponerTipo(r.tipo);
+        if (tipo === 'ticket' && r.tipo === 'avance') { lectura.textContent = 'No pude leer el ticket. Escribe el monto.'; return; }
+        if (tipo === 'avance' && r.tipo === 'ticket') { lectura.textContent = 'Parece ticket de compra. Si lo es, toca "Ticket de compra".'; return; }
         if (r.tipo === 'ticket') {
           if (r.monto) monto.value = r.monto; if (r.proveedor) proveedor.value = r.proveedor; if (r.fecha) fecha.value = r.fecha;
           lectura.textContent = 'Parece ticket de compra' + (r.monto ? ' por ' + dinero(r.monto) : '') + '. Revisa y guarda.';
@@ -942,7 +971,7 @@ window.crearClienteSupabase = function (cfg) {
           if (n) ctx.aviso(`${n} subida${n > 1 ? 's' : ''} a Drive`); ctx.ir('fotos'); } }, 'Subir a Drive ahora')
           : h('div', { class: 'mu' }, 'Se subirán cuando conectemos tu Google Drive. No borres los datos de la app.')) : null,
       Object.entries(grupos).map(([k, xs]) => [h('div', { class: 'lbl' }, (modo === 'concepto' ? k : fechaCorta(k)) + ' · ' + xs.length), h('div', { class: 'grid2' }, xs.map(ficha))]),
-      fs.length ? h('div', { class: 'mu' }, 'Toca una foto para abrirla en Drive. La app solo guarda el enlace.') : h('p', { class: 'vacio' }, modo === 'tickets' ? 'Sin tickets todavía.' : 'Sin fotos todavía.')] };
+      botonMini, fs.length ? h('div', { class: 'mu' }, 'Toca una foto para abrirla en Drive.') : h('p', { class: 'vacio' }, modo === 'tickets' ? 'Sin tickets todavía.' : 'Sin fotos todavía.')] };
   };
 })(window);
 </script>
@@ -1023,7 +1052,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="0.4.1-20261127185522">
+</head><body data-version="0.4.2-20261127185927">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <section id="acceso">
   <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
