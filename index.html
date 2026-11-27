@@ -246,18 +246,25 @@ window.crearClienteSupabase = function (cfg) {
 <script>// id: reporte.resumen · tipo: regla_calculo · módulo: reporte · deps: reporte.gastado_vs_avance
 // Totales de la obra a partir de las filas de reporte_conceptos.
 (function (raiz) {
-  function resumenObra(filas) {
-    const n = (x) => Number(x || 0);
+  const n = (x) => Number(x || 0);
+  // Gastos y sueldos sin concepto (gastos generales, tickets sin concepto, sueldos por semana): cuentan en el total de la obra.
+  function sinConcepto(gastos, sueldos) {
+    const xs = [...(gastos || []), ...(sueldos || [])].filter((x) => !x.concepto_id);
+    const suma = (e) => xs.filter((x) => x.estado === e).reduce((s, x) => s + n(x.monto), 0);
+    return { comprometido: suma('comprometido'), pagado: suma('pagado') };
+  }
+  function resumenObra(filas, extra) {
+    const e = extra || { comprometido: 0, pagado: 0 };
     const presupuesto = filas.reduce((s, f) => s + n(f.presupuesto), 0);
-    const comprometido = filas.reduce((s, f) => s + n(f.comprometido), 0);
-    const pagado = filas.reduce((s, f) => s + n(f.pagado), 0);
+    const comprometido = filas.reduce((s, f) => s + n(f.comprometido), 0) + n(e.comprometido);
+    const pagado = filas.reduce((s, f) => s + n(f.pagado), 0) + n(e.pagado);
     // Avance físico ponderado por importe; gastado = comprometido + pagado sobre presupuesto.
     const avance = presupuesto > 0 ? filas.reduce((s, f) => s + n(f.presupuesto) * n(f.pct_avance), 0) / presupuesto : 0;
     const gastado = presupuesto > 0 ? (100 * (comprometido + pagado)) / presupuesto : 0;
     const alertas = filas.filter((f) => f.alerta);
     return { presupuesto, comprometido, pagado, avance, gastado, alertas };
   }
-  if (typeof module !== 'undefined') module.exports = { resumenObra }; else raiz.resumenObra = resumenObra;
+  if (typeof module !== 'undefined') module.exports = { resumenObra, sinConcepto }; else { raiz.resumenObra = resumenObra; raiz.sinConcepto = sinConcepto; }
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script>// id: core.app · tipo: proceso_base · módulo: core · deps: core.datos, ui.ayudas, todas las pantallas
@@ -356,7 +363,7 @@ window.crearClienteSupabase = function (cfg) {
     const [filas, gastos, sueldos] = await Promise.all([
       ctx.datos.listar('reporte_conceptos', { obra_id: obra }),
       ctx.datos.listar('gastos', { obra_id: obra }), ctx.datos.listar('sueldos', { obra_id: obra })]);
-    const r = raiz.resumenObra(filas);
+    const r = raiz.resumenObra(filas, raiz.sinConcepto(gastos, sueldos));
     const semana = (xs) => xs.filter((x) => x.fecha >= desde).reduce((s, x) => s + Number(x.monto), 0);
     const contenido = [
       h('div', { class: 'grid2' },
@@ -512,18 +519,19 @@ window.crearClienteSupabase = function (cfg) {
 (function (raiz) {
   const { h, corto, pct, nombreConcepto, hoy, fechaCorta } = raiz.UI;
   raiz.PANTALLAS.reporte = async (ctx) => {
-    const fs = await ctx.datos.listar('reporte_conceptos', { obra_id: ctx.obra.id });
-    const r = raiz.resumenObra(fs);
+    const [fs, gastos, sueldos] = await Promise.all([ctx.datos.listar('reporte_conceptos', { obra_id: ctx.obra.id }), ctx.datos.listar('gastos', { obra_id: ctx.obra.id }), ctx.datos.listar('sueldos', { obra_id: ctx.obra.id })]);
+    const sc = raiz.sinConcepto(gastos, sueldos), r = raiz.resumenObra(fs, sc);
     const td = (v, cl) => h('td', { class: cl || '' }, v);
     const tabla = h('table', {}, h('thead', {}, h('tr', {}, ['Concepto', 'Presup.', 'Comprom.', 'Pagado', '% Gast', '% Av'].map((t) => h('th', { scope: 'col' }, t)))),
       h('tbody', {}, fs.map((f) => h('tr', { class: f.alerta ? 'al' : '' }, td((f.alerta ? '● ' : '') + nombreConcepto(f), f.alerta ? 'rojo b' : ''), td(corto(f.presupuesto)), td(corto(f.comprometido)), td(corto(f.pagado)),
         td(pct(f.pct_gastado), f.alerta ? 'rojo b' : ''), td(pct(f.pct_avance), f.alerta ? '' : 'verde b'))),
+        sc.comprometido + sc.pagado > 0 ? h('tr', {}, td('Sin concepto (generales y sueldos por semana)', 'mu'), td('—'), td(corto(sc.comprometido)), td(corto(sc.pagado)), td('—'), td('—')) : null,
         h('tr', {}, td('Total', 'b'), td(corto(r.presupuesto), 'b'), td(corto(r.comprometido), 'b'), td(corto(r.pagado), 'b'), td(pct(r.gastado), 'b'), td(pct(r.avance), 'b'))));
     return { titulo: 'Reporte por concepto', sub: 'Al ' + fechaCorta(hoy()), contenido: [
       fs.length ? h('div', { class: 'c tabla', style: 'padding:6px 8px' }, tabla) : h('p', { class: 'vacio' }, 'Sin conceptos todavía.'),
       r.alertas.length ? h('div', { class: 'c alerta' }, h('div', { class: 'b rojo' }, '● Gastado supera avance'),
         h('div', { class: 'mu' }, r.alertas.map((f) => `${nombreConcepto(f)}: +${Math.round(Number(f.pct_gastado) - Number(f.pct_avance || 0))} puntos`).join(' · '))) : null,
-      h('div', { class: 'mu' }, 'Gastado = comprometido + pagado (gastos y sueldos a destajo). PDF y Excel: siguiente etapa.')] };
+      h('div', { class: 'mu' }, 'Gastado = comprometido + pagado (gastos y sueldos). Lo que no tiene concepto cuenta en el total de la obra. PDF y Excel: siguiente etapa.')] };
   };
 })(window);
 </script>
@@ -1107,7 +1115,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="0.5.0-20261127192737">
+</head><body data-version="0.5.1-20261127193121">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <section id="acceso">
   <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
