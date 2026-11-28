@@ -68,6 +68,7 @@ button { cursor:pointer; }
 .dia { border:1px solid #c9c6bf; background:#fff; border-radius:8px; padding:10px 0; font-weight:700; font-size:14px; }
 .dia.on { background:var(--oscuro); color:#fff; border-color:var(--oscuro); }
 .dia.medio { background:linear-gradient(135deg, var(--oscuro) 50%, #fff 50%); color:#fff; text-shadow:0 0 2px #000; }
+.caja { border-left:4px solid var(--verde, #2e9d5b); } .caja.bolsa { border-left-color:var(--rojo, #c0392b); }
 .semana { border-left:4px solid var(--acento); } a.btn { text-decoration:none; display:flex; align-items:center; justify-content:center; }
 .red { background:#fff3d6; color:#6b4a00; font-size:13px; font-weight:600; padding:8px 16px; text-align:center; }
 .red.off { background:#3a3f47; color:#fff; }
@@ -94,7 +95,7 @@ window.CONFIG = {
   minutosBloqueoInactividad: 15,   // 15 min sin usar la app (abierta o cerrada): pide huella o PIN
 };
 </script>
-<script data-version="1.3.1-20261128001008">// id: core.vigia · tipo: proceso_base · módulo: core · deps: core.configuracion
+<script data-version="1.4.0-20261128013656">// id: core.vigia · tipo: proceso_base · módulo: core · deps: core.configuracion
 // Si la app no arranca: muestra qué pasó con botón "Reparar" (borra caché y recarga) y avisa el error al servidor
 // (tabla errores_app) para poder arreglarlo sin pedirle nada al dueño. Se repara sola 1 vez por versión.
 (function (raiz) {
@@ -579,7 +580,7 @@ window.crearClienteSupabase = function (cfg) {
       const base = v === 'gasto_nuevo' ? 'gastos' : ['reporte', 'sueldos', 'bitacora', 'calendario', 'fotos', 'estimaciones', 'obra'].includes(v) ? 'mas' : v;
       nav.querySelectorAll('[data-ir]').forEach((b) => b.classList.toggle('on', b.dataset.ir === base));
       if (!ctx.obra && v !== 'obra') { vista = 'obra'; params = { nueva: true }; }
-      fab.hidden = !ctx.obra || ['obra', 'mas', 'fotos'].includes(vista); mic.hidden = fab.hidden;
+      fab.hidden = !ctx.obra || ['obra', 'mas', 'fotos', 'caja'].includes(vista); mic.hidden = fab.hidden;
       nav.hidden = !ctx.obra;
       const pantalla = raiz.PANTALLAS[vista];
       cuerpo.replaceChildren(h('p', { class: 'vacio' }, 'Cargando…'));
@@ -644,7 +645,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-<script>// id: inicio.pantalla · tipo: pantalla · módulo: inicio · deps: reporte.resumen, reporte.semanal, gastos.esquema, sueldos.esquema, core.respaldo
+<script>// id: inicio.pantalla · tipo: pantalla · módulo: inicio · deps: reporte.resumen, reporte.semanal, caja.pantalla, gastos.esquema, sueldos.esquema, core.respaldo
 (function (raiz) {
   const { h, dinero, pct, barra, nombreConcepto, hoy, fechaCorta, lunes } = raiz.UI;
   // Resumen de la semana pasada: sale al abrir la app el lunes (o el primer día que la abras esa semana) hasta que toques "Listo".
@@ -678,8 +679,9 @@ window.crearClienteSupabase = function (cfg) {
     const r = raiz.resumenObra(filas, raiz.sinConcepto(gastos, sueldos));
     const semana = (xs) => xs.filter((x) => x.fecha >= desde).reduce((s, x) => s + Number(x.monto), 0);
     const semanal = await tarjetaSemanal(ctx, true, [gastos, sueldos, filas]).catch(() => null);
+    const caja = raiz.tarjetaCaja ? await raiz.tarjetaCaja(ctx).catch(() => null) : null;
     const contenido = [
-      semanal,
+      semanal, caja,
       h('div', { class: 'grid2' },
         h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Presupuesto'), h('div', { class: 'b', style: 'font-size:18px' }, dinero(r.presupuesto))),
         h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Pagado'), h('div', { class: 'b', style: 'font-size:18px' }, dinero(r.pagado)))),
@@ -1613,7 +1615,7 @@ window.crearClienteSupabase = function (cfg) {
 // Copia de todos los datos en el Drive del dueño (carpeta "Control de obra - respaldos"), un archivo por respaldo.
 // Automático cada 7 días si Google ya dio permiso; si no, botón "Respaldar ahora" (Inicio avisa y Más).
 (function (raiz) {
-  const TABLAS = ['obras', 'listas', 'conceptos', 'personas', 'gastos', 'destajos', 'sueldos', 'avances', 'estimaciones', 'estimacion_conceptos', 'fotos', 'tareas', 'tarea_dependencias', 'bitacora_notas'];
+  const TABLAS = ['obras', 'listas', 'conceptos', 'personas', 'gastos', 'destajos', 'sueldos', 'avances', 'estimaciones', 'estimacion_conceptos', 'fotos', 'tareas', 'tarea_dependencias', 'bitacora_notas', 'cobros'];
   const CARPETA = 'Control de obra - respaldos', DIAS = 7;
   const leer = () => { try { return Number(localStorage.getItem('ultimoRespaldo')) || 0; } catch (e) { return 0; } };
   async function armar(datos) {
@@ -1642,6 +1644,64 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
+<script>// id: caja.calculo · tipo: regla_calculo · módulo: caja · deps: caja.esquema, gastos.esquema, sueldos.esquema
+// Caja = cobrado al cliente − pagado (gastos + sueldos pagados). Si sale negativo, eso lo puso el dueño de su bolsa.
+// Ejemplo del dueño: anticipo $1,000, pagó $1,500 → $500 de su bolsa.
+(function (raiz) {
+  const n = (x) => Number(x || 0);
+  const suma = (xs) => xs.reduce((s, x) => s + n(x.monto), 0);
+  function caja({ cobros, gastos, sueldos }) {
+    const todo = [...(gastos || []), ...(sueldos || [])];
+    const cobrado = suma(cobros || []), pagado = suma(todo.filter((x) => x.estado === 'pagado')), porPagar = suma(todo.filter((x) => x.estado === 'comprometido'));
+    const saldo = Math.round((cobrado - pagado) * 100) / 100;
+    return { cobrado, pagado, porPagar, saldo, quedaEnCaja: Math.max(0, saldo), deTuBolsa: Math.max(0, -saldo),
+      // Si pagas lo pendiente con lo que hay en caja, ¿alcanza?
+      faltaraParaPendientes: Math.max(0, porPagar - Math.max(0, saldo)) };
+  }
+  if (typeof module !== 'undefined') module.exports = { caja }; else raiz.caja = caja;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>// id: caja.pantalla · tipo: pantalla · módulo: caja · deps: caja.calculo, caja.esquema
+// Caja de la obra: registrar lo que te paga el cliente y ver si alcanza o si estás poniendo de tu bolsa.
+(function (raiz) {
+  const { h, num, dinero, hoy, fechaCorta } = raiz.UI;
+  const TIPOS = [['anticipo', 'Anticipo'], ['estimacion', 'Estimación'], ['otro', 'Otro']];
+  const leer = (ctx) => Promise.all([ctx.datos.listar('cobros', { obra_id: ctx.obra.id }, ['-fecha']), ctx.datos.listar('gastos', { obra_id: ctx.obra.id }), ctx.datos.listar('sueldos', { obra_id: ctx.obra.id })]);
+  // Tarjeta corta (Inicio y Caja). Tocarla abre la Caja.
+  function tarjetaCaja(ctx, k, abrir) {
+    const bolsa = k.deTuBolsa > 0;
+    return h(abrir ? 'button' : 'div', { class: 'c caja' + (bolsa ? ' bolsa' : ''), style: abrir ? 'text-align:left;width:100%;border:0' : '', onclick: abrir ? () => ctx.ir('caja') : null },
+      h('div', { class: 'row' }, h('span', { class: 'lbl' }, '💵 Caja de la obra'), abrir ? h('span', { class: 'mu' }, 'Ver ›') : null),
+      h('div', { class: 'row', style: 'margin-top:6px' }, h('span', { class: 'b' }, bolsa ? 'Pusiste de tu bolsa' : 'Te queda del cliente'), h('span', { class: 'big ' + (bolsa ? 'rojo' : 'verde') }, dinero(bolsa ? k.deTuBolsa : k.quedaEnCaja))),
+      h('div', { class: 'mu' }, `Te han pagado ${dinero(k.cobrado)} · Has pagado ${dinero(k.pagado)}`),
+      k.faltaraParaPendientes > 0 ? h('div', { class: 'mu nar' }, `Debes ${dinero(k.porPagar)}: te faltarán ${dinero(k.faltaraParaPendientes)}`) : null);
+  }
+  raiz.tarjetaCaja = async (ctx) => { const [cobros, gastos, sueldos] = await leer(ctx); return tarjetaCaja(ctx, raiz.caja({ cobros, gastos, sueldos }), true); };
+  raiz.PANTALLAS.caja = async (ctx) => {
+    const [cobros, gastos, sueldos] = await leer(ctx), k = raiz.caja({ cobros, gastos, sueldos });
+    let tipo = 'anticipo'; const msg = h('p', { class: 'mu rojo', role: 'status' });
+    const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Tipo de cobro' }, TIPOS.map(([v, t]) => h('button', { type: 'button', class: v === tipo ? 'on' : '', onclick: (e) => { tipo = v; chips.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === e.currentTarget)); } }, t)));
+    const form = h('form', { class: 'form c', onsubmit: async (ev) => {
+      ev.preventDefault(); const d = new FormData(form), monto = num(d.get('monto'));
+      if (!(monto > 0)) { msg.textContent = 'Escribe cuánto te pagaron'; form.elements.monto.focus(); return; }
+      try { await ctx.datos.crear('cobros', { obra_id: ctx.obra.id, monto, tipo, fecha: d.get('fecha') || hoy(), nota: d.get('nota').trim() || null }); ctx.aviso('Cobro guardado'); ctx.recargar(); }
+      catch (e) { msg.textContent = 'No se guardó: ' + e.message; }
+    } },
+      h('div', { class: 'lbl' }, '+ Me pagaron'),
+      h('label', {}, 'Monto', h('input', { name: 'monto', type: 'number', step: '0.01', min: '0', inputMode: 'decimal', style: 'font-size:22px;font-weight:700' })),
+      chips,
+      h('div', { class: 'grid2' }, h('label', {}, 'Fecha', h('input', { name: 'fecha', type: 'date', value: hoy() })), h('label', {}, 'Nota', h('input', { name: 'nota', placeholder: 'Ej. 2º anticipo' }))),
+      msg, h('button', { class: 'btn' }, 'Guardar cobro'));
+    const nombre = Object.fromEntries(TIPOS);
+    const lista = cobros.length ? h('div', { class: 'c' }, cobros.map((c) => h('div', { class: 'row', style: 'padding:6px 0;border-bottom:1px solid #eee' },
+      h('span', {}, h('div', { class: 'b' }, dinero(c.monto)), h('div', { class: 'mu' }, `${fechaCorta(c.fecha)} · ${nombre[c.tipo] || c.tipo}${c.nota ? ' · ' + c.nota : ''}`)),
+      h('button', { class: 'btn lig', style: 'width:auto;padding:8px 12px', onclick: async () => { if (!confirm('¿Borrar este cobro de ' + dinero(c.monto) + '?')) return; await ctx.datos.borrar('cobros', c.id); ctx.aviso('Cobro borrado'); ctx.recargar(); } }, 'Borrar'))))
+      : h('p', { class: 'vacio' }, 'Aún no registras lo que te paga el cliente.');
+    return { titulo: 'Caja de la obra', contenido: [tarjetaCaja(ctx, k, false), form, h('div', { class: 'cap' }, 'Lo que te han pagado'), lista,
+      h('div', { class: 'mu' }, 'Te queda = lo que te pagó el cliente − lo que ya pagaste (gastos y sueldos pagados). Lo pendiente de pagar no cuenta hasta que lo pagues.')] };
+  };
+})(window);
+</script>
 <script>// id: ajustes.pantalla · tipo: pantalla · módulo: ajustes · deps: acceso.reglas, obra.pantalla, core.respaldo, reporte.aviso_celular
 (function (raiz) {
   const { h } = raiz.UI;
@@ -1655,6 +1715,7 @@ window.crearClienteSupabase = function (cfg) {
     const obras = await ctx.datos.listar('obras', {}, ['creado']);
     const ir = (txt, v, p, desc) => h('button', { class: 'c', style: 'text-align:left;border:0', onclick: () => ctx.ir(v, p) }, h('div', { class: 'lbl' }, txt), desc ? h('div', { class: 'mu' }, desc) : null);
     return { titulo: 'Más', contenido: [
+      ir('💵 Caja de la obra', 'caja', null, 'Lo que te paga el cliente vs lo que has pagado'),
       ir('Reporte por concepto', 'reporte', null, 'Presupuesto, comprometido, pagado, % gastado vs % avance'),
       ir('Sueldos', 'sueldos', null, 'Por semana y destajo a precio alzado'), ir('Bitácora', 'bitacora', null, 'Lo hecho y lo gastado por día, semana, mes y año'),
       ir('Calendario', 'calendario', null, 'Programa con línea base y atrasos'), ir('Fotos', 'fotos', null, 'Enlaces a tu Google Drive'), ir('Estimaciones', 'estimaciones', null, 'Periodo, importe y acumulado'),
@@ -1685,7 +1746,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="1.3.1-20261128001008">
+</head><body data-version="1.4.0-20261128013656">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <div id="portada"><img src="iconos/portada.jpg" alt="IVSa Proyecto &amp; Construcción"></div>
 <section id="acceso">
