@@ -94,7 +94,7 @@ window.CONFIG = {
   minutosBloqueoInactividad: 15,   // 15 min sin usar la app (abierta o cerrada): pide huella o PIN
 };
 </script>
-<script data-version="1.3.0-20261128000740">// id: core.vigia · tipo: proceso_base · módulo: core · deps: core.configuracion
+<script data-version="1.3.1-20261128001008">// id: core.vigia · tipo: proceso_base · módulo: core · deps: core.configuracion
 // Si la app no arranca: muestra qué pasó con botón "Reparar" (borra caché y recarga) y avisa el error al servidor
 // (tabla errores_app) para poder arreglarlo sin pedirle nada al dueño. Se repara sola 1 vez por versión.
 (function (raiz) {
@@ -102,7 +102,7 @@ window.CONFIG = {
   var enviados = 0, VER = (document.currentScript && document.currentScript.dataset.version) || '';
   function reportar(texto) {
     try {
-      if (enviados++ > 5 || !raiz.CONFIG) return;
+      if (enviados++ > 5 || !raiz.CONFIG || location.protocol === 'file:') return; // pruebas locales: no se reporta
       var k = raiz.CONFIG.supabaseAnonKey;
       fetch(raiz.CONFIG.supabaseUrl + '/rest/v1/errores_app', { method: 'POST', keepalive: true,
         headers: { apikey: k, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
@@ -135,15 +135,15 @@ window.CONFIG = {
     var t = e.message + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno; if (arrancando) fallo(t); else reportar(t);
   }, true);
   raiz.addEventListener('unhandledrejection', function (e) { reportar('promesa: ' + ((e.reason && (e.reason.stack || e.reason.message)) || e.reason)); });
-  // Vigía de arranque: a los 20 s debe verse la pantalla de entrada o la app con contenido.
+  // Vigía de arranque: a los 35 s debe verse la pantalla de entrada o la app con contenido.
   setTimeout(function () {
     arrancando = false;
     var acc = document.getElementById('acceso'), app = document.getElementById('app');
     var c = app && app.querySelector('.cuerpo');
     var bien = (acc && !acc.hidden) || (app && !app.hidden && c && c.children.length && !/^Cargando/.test(c.textContent));
-    if (!bien) { var t = 'arranque trabado 20 s: acceso ' + (acc ? (acc.hidden ? 'oculto' : 'visible') : 'no hay') + ', app ' + (c ? c.textContent.slice(0, 40) : 'vacía') + ', pasos ' + raiz.PASOS.join(' | ') + ', estado ' + (raiz.ACCESO ? raiz.ACCESO.estado() : '?');
+    if (!bien) { var t = 'arranque trabado 35 s: acceso ' + (acc ? (acc.hidden ? 'oculto' : 'visible') : 'no hay') + ', app ' + (c ? c.textContent.slice(0, 40) : 'vacía') + ', pasos ' + raiz.PASOS.join(' | ') + ', estado ' + (raiz.ACCESO ? raiz.ACCESO.estado() : '?');
       reportar(t); mostrar('Se quedó cargando. Toca para reparar.'); }
-  }, 20000);
+  }, 35000);
   raiz.VIGIA = { reportar: reportar, reparar: reparar };
 })(window);
 </script>
@@ -1685,7 +1685,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="1.3.0-20261128000740">
+</head><body data-version="1.3.1-20261128001008">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <div id="portada"><img src="iconos/portada.jpg" alt="IVSa Proyecto &amp; Construcción"></div>
 <section id="acceso">
