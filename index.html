@@ -13,6 +13,10 @@ button { cursor:pointer; }
 [hidden] { display:none !important; }
 
 /* Acceso */
+#portada { position:fixed; inset:0; z-index:50; background:#1bdbff; display:flex; align-items:center; justify-content:center; transition:opacity .4s; }
+#portada img { width:100%; max-width:600px; -webkit-mask-image:linear-gradient(transparent, #000 14%, #000 86%, transparent); mask-image:linear-gradient(transparent, #000 14%, #000 86%, transparent); }
+#portada.fuera { opacity:0; pointer-events:none; }
+.fab.mic svg { width:26px; height:26px; }
 .acceso-cab { background:var(--oscuro); color:#fff; padding:90px 24px 36px; text-align:center; }
 .acceso-cab h1 { font-size:26px; margin:10px 0 0; } .acceso-cab img { width:64px; height:64px; border-radius:14px; }
 .acceso { max-width:420px; margin:0 auto; padding:24px; display:grid; gap:14px; }
@@ -81,7 +85,6 @@ th { color:var(--tenue); font-weight:600; font-size:11px; } td:first-child, th:f
 .aviso { position:fixed; left:50%; transform:translateX(-50%); bottom:150px; background:var(--oscuro); color:#fff; padding:10px 16px; border-radius:10px; font-size:14px; z-index:9; }
 .vacio { text-align:center; color:var(--tenue); padding:24px 8px; }
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.js"></script>
 <script>// id: core.configuracion · tipo: parametro_negocio · módulo: core · deps: ninguna
 // Valores del proyecto Supabase. La clave "anon" es pública por diseño; la seguridad real la da RLS.
 window.CONFIG = {
@@ -91,6 +94,60 @@ window.CONFIG = {
   minutosBloqueoInactividad: 15,   // 15 min sin usar la app (abierta o cerrada): pide huella o PIN
 };
 </script>
+<script data-version="1.3.0-20261128000740">// id: core.vigia · tipo: proceso_base · módulo: core · deps: core.configuracion
+// Si la app no arranca: muestra qué pasó con botón "Reparar" (borra caché y recarga) y avisa el error al servidor
+// (tabla errores_app) para poder arreglarlo sin pedirle nada al dueño. Se repara sola 1 vez por versión.
+(function (raiz) {
+  raiz.PASOS = ['html ' + Math.round(performance.now())];
+  var enviados = 0, VER = (document.currentScript && document.currentScript.dataset.version) || '';
+  function reportar(texto) {
+    try {
+      if (enviados++ > 5 || !raiz.CONFIG) return;
+      var k = raiz.CONFIG.supabaseAnonKey;
+      fetch(raiz.CONFIG.supabaseUrl + '/rest/v1/errores_app', { method: 'POST', keepalive: true,
+        headers: { apikey: k, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ version: VER, texto: String(texto).slice(0, 3000), donde: (navigator.userAgent + ' | ' + location.href).slice(0, 400) }) }).catch(function () {});
+    } catch (e) { /* nada */ }
+  }
+  async function reparar() {
+    try { var rs = await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map(function (r) { return r.unregister(); })); } catch (e) { /* nada */ }
+    try { var ks = await caches.keys(); await Promise.all(ks.map(function (k) { return caches.delete(k); })); } catch (e) { /* nada */ }
+    location.reload();
+  }
+  function mostrar(texto) {
+    if (document.getElementById('vigia')) return;
+    var d = document.createElement('div'); d.id = 'vigia';
+    d.setAttribute('style', 'position:fixed;left:12px;right:12px;bottom:90px;z-index:99;background:#fff;border:2px solid #c0392b;border-radius:12px;padding:14px;font:15px system-ui;box-shadow:0 4px 14px #0004');
+    d.innerHTML = '<b>La app no abrió bien.</b><div style="color:#666;font-size:12px;margin:6px 0;word-break:break-word"></div><button style="width:100%;padding:14px;border:0;border-radius:10px;background:#e8891d;color:#fff;font-weight:700;font-size:16px">Reparar y abrir</button>';
+    d.querySelector('div').textContent = String(texto).slice(0, 200);
+    d.querySelector('button').onclick = reparar;
+    (document.body || document.documentElement).appendChild(d);
+  }
+  function fallo(texto) {
+    reportar(texto);
+    var k = 'reparada:' + VER, ya = null; try { ya = sessionStorage.getItem(k); sessionStorage.setItem(k, '1'); } catch (e) { ya = '1'; }
+    if (!ya) return reparar(); // primera vez: se repara sola
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { mostrar(texto); }); else mostrar(texto);
+  }
+  var arrancando = true;
+  raiz.addEventListener('error', function (e) {
+    if (!e.message) { var src = (e.target && e.target.src) || ''; if (/supabase-js/.test(src) && arrancando) fallo('No cargó la librería de Supabase'); return; } // otras imágenes/scripts que no cargan: no es falla de arranque
+    var t = e.message + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno; if (arrancando) fallo(t); else reportar(t);
+  }, true);
+  raiz.addEventListener('unhandledrejection', function (e) { reportar('promesa: ' + ((e.reason && (e.reason.stack || e.reason.message)) || e.reason)); });
+  // Vigía de arranque: a los 20 s debe verse la pantalla de entrada o la app con contenido.
+  setTimeout(function () {
+    arrancando = false;
+    var acc = document.getElementById('acceso'), app = document.getElementById('app');
+    var c = app && app.querySelector('.cuerpo');
+    var bien = (acc && !acc.hidden) || (app && !app.hidden && c && c.children.length && !/^Cargando/.test(c.textContent));
+    if (!bien) { var t = 'arranque trabado 20 s: acceso ' + (acc ? (acc.hidden ? 'oculto' : 'visible') : 'no hay') + ', app ' + (c ? c.textContent.slice(0, 40) : 'vacía') + ', pasos ' + raiz.PASOS.join(' | ') + ', estado ' + (raiz.ACCESO ? raiz.ACCESO.estado() : '?');
+      reportar(t); mostrar('Se quedó cargando. Toca para reparar.'); }
+  }, 20000);
+  raiz.VIGIA = { reportar: reportar, reparar: reparar };
+})(window);
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.js"></script>
 <script>// id: acceso.servicio · tipo: servicio_externo · módulo: acceso · deps: core.configuracion
 // Requiere @supabase/supabase-js >= 2.105.0 (passkey experimental).
 window.crearClienteSupabase = function (cfg) {
@@ -118,6 +175,7 @@ window.crearClienteSupabase = function (cfg) {
     const guardarUso = (t) => { try { if (o.almacen) { if (t) o.almacen.setItem(CLAVE, String(t)); else o.almacen.removeItem(CLAVE); } } catch (e) { /* sin almacenamiento */ } };
     // Bloqueo con huella/PIN: apagado por defecto (dueño: "déjalo libre con la opción de poderle poner contraseña más adelante").
     const pideClave = () => { if (typeof o.pedirClave === 'function') return !!o.pedirClave(); try { return !!o.almacen && o.almacen.getItem('pedirClave') === '1'; } catch (e) { return false; } };
+    const tokenGuardado = () => { try { const s = o.almacen; if (!s) return false; for (let i = 0; i < s.length; i++) if (/^sb-.*-auth-token$/.test(s.key(i))) return true; } catch (e) { /* nada */ } return false; };
     const vencido = (t) => pideClave() && o.ahora() - t > o.minutosBloqueo * 60000;
     let estado = 'fuera', ultimoUso = 0, metodo = '';
     const escuchas = [];
@@ -135,7 +193,9 @@ window.crearClienteSupabase = function (cfg) {
       // urlActual: si viene del enlace del correo, entra directo.
       async iniciar(urlActual) {
         const vieneDeEnlace = /access_token=|[?&]code=/.test(urlActual || '');
-        const { data } = await sb.auth.getSession();
+        let data = null;
+        try { data = (await Promise.race([sb.auth.getSession(), new Promise((_, mal) => setTimeout(() => mal(new Error('timeout')), o.esperaSesion || 8000))])).data; }
+        catch (e) { data = { session: tokenGuardado() ? {} : null }; } // sin respuesta: si hay sesión guardada en el celular, se entra
         const haySesion = !!(data && data.session);
         let conQueDesbloquear = true;
         const usoReciente = haySesion && (!pideClave() || (leerUso() > 0 && !vencido(leerUso())));
@@ -252,6 +312,7 @@ window.crearClienteSupabase = function (cfg) {
   const ICONOS = {
     inicio: 'M3 11l9-8 9 8M5 10v10h14V10', conceptos: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
     gastos: 'M12 2v20M17 6H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6', avance: 'M3 17l6-6 4 4 8-8M15 7h6v6', mas: 'M4 6h16M4 12h16M4 18h16',
+    mic: 'M12 3a3 3 0 013 3v6a3 3 0 01-6 0V6a3 3 0 013-3zM19 11a7 7 0 01-14 0M12 18v3',
   };
   const icono = (n) => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '2'); s.setAttribute('aria-hidden', 'true'); const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', ICONOS[n]); s.append(p); return s; };
   raiz.UI = { h, num, dinero, corto, pct, hoy, fechaCorta, lunes, masDias, diasEntre, barra, nombreConcepto, aviso, icono };
@@ -302,6 +363,8 @@ window.crearClienteSupabase = function (cfg) {
     const r = indexedDB.open('control-obra', 3);
     r.onupgradeneeded = () => { const db = r.result; for (const [t, k, auto] of TABLAS) if (!db.objectStoreNames.contains(t)) db.createObjectStore(t, { keyPath: k, autoIncrement: !!auto }); };
     r.onsuccess = () => ok(r.result); r.onerror = () => { bd = null; mal(r.error); };
+    r.onblocked = () => { bd = null; mal(new Error('almacén del celular ocupado')); };
+    setTimeout(() => { bd = null; mal(new Error('almacén del celular no responde')); }, 5000);
   }));
   const op = async (t, modo, f) => { const db = await abrir(); return new Promise((ok, mal) => { const tx = db.transaction(t, modo), q = f(tx.objectStore(t)); tx.oncomplete = () => ok(q && q.result); tx.onerror = () => mal(tx.error); }); };
   raiz.LOCAL = {
@@ -328,10 +391,10 @@ window.crearClienteSupabase = function (cfg) {
     const revisar = ({ data, error }) => { if (error) throw new Error(error.message || 'Error de base de datos'); return data; };
     // Corre en línea; si falla la red devuelve null (y marca "sin señal"); otros errores sí truenan.
     async function enLinea(f) {
-      try { const r = await f(); if (estado.sinSenal) avisar({ sinSenal: false }); return { r }; }
+      try { const r = await Promise.race([f(), new Promise((_, mal) => setTimeout(() => mal(new Error('timeout: el servidor no contestó')), estado.sinSenal ? 4000 : (opciones && opciones.espera || 15000)))]); if (estado.sinSenal) avisar({ sinSenal: false }); return { r }; }
       catch (e) { if (L && esFallaDeRed(e)) { avisar({ sinSenal: true }); return null; } throw e; }
     }
-    const cola = async () => (L ? (await L.todos('cola')).sort((a, b) => a.n - b.n) : []);
+    const cola = async () => (L ? (await L.todos('cola').catch(() => [])).sort((a, b) => a.n - b.n) : []);
     async function encolar(c) { await L.poner('cola', c); avisar({ pendientes: (await cola()).length }); }
 
     async function aplicar(c) {
@@ -372,7 +435,7 @@ window.crearClienteSupabase = function (cfg) {
         });
         if (x) { if (L) L.poner('espejo', { k, datos: x.r }).catch(() => {}); return x.r; }
         // Sin señal: última copia + los cambios que están en espera.
-        const copia = await L.leer('espejo', k); let filas = copia ? copia.datos.map((f) => Object.assign({}, f)) : [];
+        const copia = await L.leer('espejo', k).catch(() => null); let filas = copia ? copia.datos.map((f) => Object.assign({}, f)) : [];
         for (const c of await cola()) {
           if (c.tabla !== tabla) continue;
           if (c.op === 'crear' && coincide(c.fila, filtro) && !filas.some((f) => f.id === c.fila.id)) filas.unshift(Object.assign({ creado: c.cuando }, c.vista || c.fila));
@@ -495,7 +558,7 @@ window.crearClienteSupabase = function (cfg) {
     const menuFab = h('div', { class: 'menu-fab', hidden: true }, fila('avance', 'Foto obra'), fila('ticket', 'Foto ticket'));
     const fab = h('button', { class: 'fab', 'aria-label': 'Tomar foto', onclick: () => { menuFab.hidden = !menuFab.hidden; } }, '+');
     // Micrófono fijo arriba del "+": un toque = dictar gasto (dueño: "que aparezca arribita del más").
-    const mic = h('button', { class: 'fab mic', 'aria-label': 'Dictar gasto', onclick: () => { menuFab.hidden = true; ctx.dictar(); } }, '🎤');
+    const mic = h('button', { class: 'fab mic', 'aria-label': 'Dictar gasto', onclick: () => { menuFab.hidden = true; ctx.dictar(); } }, icono('mic'));
     cont.replaceChildren(h('div', { class: 'app' }, top, red, cuerpo), camara, galeria, menuFab, mic, fab, nav);
 
     // Lo que cambia poco se guarda en memoria y se refresca al guardar algo.
@@ -547,7 +610,10 @@ window.crearClienteSupabase = function (cfg) {
     }
     // Link directo: …/#aviso abre Más en "Aviso del lunes".
     let directo = false;
-    return elegirObra().then(() => { directo = (raiz.location && raiz.location.hash) === '#aviso' && !!ctx.obra; return ir(directo ? 'mas' : 'inicio'); }).then(() => { if (directo) { const b = document.getElementById('btnAviso'); if (b) { b.scrollIntoView({ block: 'center' }); b.style.outline = '3px solid var(--acento)'; } } if (raiz.RESPALDO) raiz.RESPALDO.automatico(datos).then((x) => { if (x) aviso('Respaldo semanal guardado en tu Drive'); }); return ctx; });
+    // Algo visible de inmediato (si no, el celular se queda en la pantalla del logo).
+    top.replaceChildren(...[grua, h('h1', {}, 'Control de obra')].filter(Boolean)); cuerpo.replaceChildren(h('p', { class: 'vacio' }, 'Cargando…'));
+    raiz.PASOS && raiz.PASOS.push('app:inicio ' + Math.round(performance.now()));
+    return elegirObra().then(() => { raiz.PASOS && raiz.PASOS.push('app:obras ' + Math.round(performance.now())); directo = (raiz.location && raiz.location.hash) === '#aviso' && !!ctx.obra; return ir(directo ? 'mas' : 'inicio'); }).then(() => { if (directo) { const b = document.getElementById('btnAviso'); if (b) { b.scrollIntoView({ block: 'center' }); b.style.outline = '3px solid var(--acento)'; } } if (raiz.RESPALDO) raiz.RESPALDO.automatico(datos).then((x) => { if (x) aviso('Respaldo semanal guardado en tu Drive'); }); return ctx; });
   }
   raiz.iniciarApp = iniciarApp;
 })(window);
@@ -1619,18 +1685,20 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="1.2.2-20261127210350">
+</head><body data-version="1.3.0-20261128000740">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
+<div id="portada"><img src="iconos/portada.jpg" alt="IVSa Proyecto &amp; Construcción"></div>
 <section id="acceso">
   <div class="acceso-cab"><img src="iconos/icono-192.png" alt=""><h1>Control de Obra</h1></div>
   <div class="acceso">
-    <div data-vista="fuera">
+    <p class="o" id="cargandoAcceso">Cargando…</p>
+    <div data-vista="fuera" hidden>
       <button id="btnPasskey" class="btn" style="font-size:18px;padding:20px">Entrar con huella / Face ID</button>
       <p class="o">o recibe un enlace</p>
       <input id="correo" type="email" autocomplete="username webauthn" placeholder="tu@correo.com" aria-label="Correo">
       <button id="btnEnlace" class="btn o2">Enviarme enlace</button>
     </div>
-    <div data-vista="bloqueada">
+    <div data-vista="bloqueada" hidden>
       <button id="btnPasskey2" class="btn" style="font-size:18px;padding:20px">Desbloquear con huella / Face ID</button>
       <p class="o">o con tu PIN</p>
       <input id="pin" inputmode="numeric" maxlength="6" placeholder="PIN de 6 dígitos" autocomplete="off" aria-label="PIN">
@@ -1649,13 +1717,23 @@ window.crearClienteSupabase = function (cfg) {
   const $ = (id) => document.getElementById(id);
   const msg = (t) => { $('msg').textContent = t || ''; };
   let dentroAntes = false;
+  // Portada con el logo IVSa: mínimo 1.2 s; se quita al ver la primera pantalla (máximo 20 s).
+  const t0 = Date.now();
+  function quitarPortada(antes) {
+    const p = $('portada'); if (!p || p.dataset.quitando) return; p.dataset.quitando = '1';
+    const espera = new Promise((ok) => setTimeout(ok, Math.max(0, 1200 - (Date.now() - t0))));
+    Promise.all([espera, Promise.race([Promise.resolve(antes).catch(() => {}), new Promise((ok) => setTimeout(ok, 20000))])])
+      .then(() => { p.classList.add('fuera'); setTimeout(() => p.remove(), 450); });
+  }
   function pintar(e) {
-    document.querySelectorAll('[data-vista]').forEach((d) => { d.hidden = d.dataset.vista !== e; });
+    if (window.PASOS) window.PASOS.push('acceso:' + e + ' ' + Math.round(performance.now()));
+    if (e !== 'dentro') quitarPortada();
+    document.querySelectorAll('[data-vista]').forEach((d) => { d.hidden = d.dataset.vista !== e; }); $('cargandoAcceso').hidden = true;
     $('acceso').hidden = e === 'dentro';
     const app = $('app');
     if (e === 'dentro') {
       app.hidden = false;
-      if (!dentroAntes) { window.iniciarApp(app, datos, { acceso: a }).then(() => { if (a.metodo() !== 'sesión guardada') window.UI.aviso('Entraste con ' + a.metodo()); }); }
+      if (!dentroAntes) { const listo = window.iniciarApp(app, datos, { acceso: a }); quitarPortada(listo); listo.then(() => { if (a.metodo() !== 'sesión guardada') window.UI.aviso('Entraste con ' + a.metodo()); }); }
       else if (a.metodo() !== 'sesión guardada') window.UI.aviso('Entraste con ' + a.metodo());
       dentroAntes = true;
     } else if (e === 'fuera') { app.replaceChildren(); app.hidden = true; dentroAntes = false; } // nada de la app existe sin login
