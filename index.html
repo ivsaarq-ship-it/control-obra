@@ -38,7 +38,7 @@ button { cursor:pointer; }
 .top .grua .carga { animation:subeViga 7s ease-in-out infinite; }
 @keyframes subeViga { 0% { transform:translateY(0); } 60% { transform:translateY(-58px); } 75% { transform:translateY(-58px); } 100% { transform:translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .top .grua .carga { animation:none; transform:translateY(-40px); } }
-.cuerpo { flex:1; padding:14px 16px 110px; display:flex; flex-direction:column; gap:10px; }
+.cuerpo { flex:1; padding:14px 16px 170px; display:flex; flex-direction:column; gap:10px; }
 .c { background:var(--blanco); border-radius:14px; padding:12px 14px; box-shadow:0 1px 2px #0001; }
 .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
 .mu { color:var(--tenue); font-size:12px; } .b { font-weight:700; } .big { font-size:24px; font-weight:800; }
@@ -95,7 +95,7 @@ window.CONFIG = {
   minutosBloqueoInactividad: 15,   // 15 min sin usar la app (abierta o cerrada): pide huella o PIN
 };
 </script>
-<script data-version="1.4.0-20261128013656">// id: core.vigia · tipo: proceso_base · módulo: core · deps: core.configuracion
+<script data-version="1.4.1-20261128081023">// id: core.vigia · tipo: proceso_base · módulo: core · deps: core.configuracion
 // Si la app no arranca: muestra qué pasó con botón "Reparar" (borra caché y recarga) y avisa el error al servidor
 // (tabla errores_app) para poder arreglarlo sin pedirle nada al dueño. Se repara sola 1 vez por versión.
 (function (raiz) {
@@ -145,7 +145,6 @@ window.CONFIG = {
     if (!bien) { var t = 'arranque trabado 35 s: acceso ' + (acc ? (acc.hidden ? 'oculto' : 'visible') : 'no hay') + ', app ' + (c ? c.textContent.slice(0, 40) : 'vacía') + ', pasos ' + raiz.PASOS.join(' | ') + ', estado ' + (raiz.ACCESO ? raiz.ACCESO.estado() : '?');
       reportar(t); mostrar('Se quedó cargando. Toca para reparar.'); }
   }, 35000);
-  raiz.VIGIA = { reportar: reportar, reparar: reparar };
 })(window);
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.js"></script>
@@ -614,7 +613,7 @@ window.crearClienteSupabase = function (cfg) {
     // Algo visible de inmediato (si no, el celular se queda en la pantalla del logo).
     top.replaceChildren(...[grua, h('h1', {}, 'Control de obra')].filter(Boolean)); cuerpo.replaceChildren(h('p', { class: 'vacio' }, 'Cargando…'));
     raiz.PASOS && raiz.PASOS.push('app:inicio ' + Math.round(performance.now()));
-    return elegirObra().then(() => { raiz.PASOS && raiz.PASOS.push('app:obras ' + Math.round(performance.now())); directo = (raiz.location && raiz.location.hash) === '#aviso' && !!ctx.obra; return ir(directo ? 'mas' : 'inicio'); }).then(() => { if (directo) { const b = document.getElementById('btnAviso'); if (b) { b.scrollIntoView({ block: 'center' }); b.style.outline = '3px solid var(--acento)'; } } if (raiz.RESPALDO) raiz.RESPALDO.automatico(datos).then((x) => { if (x) aviso('Respaldo semanal guardado en tu Drive'); }); return ctx; });
+    return elegirObra().then(() => { raiz.PASOS && raiz.PASOS.push('app:obras ' + Math.round(performance.now())); directo = (raiz.location && raiz.location.hash) === '#aviso' && !!ctx.obra; return ir(directo ? 'mas' : 'inicio'); }).then(() => { if (directo) { const b = document.getElementById('btnAviso') || document.getElementById('btnProbarAviso'); if (b) { b.scrollIntoView({ block: 'center' }); b.style.outline = '3px solid var(--acento)'; } } if (raiz.RESPALDO) raiz.RESPALDO.automatico(datos).then((x) => { if (x) aviso('Respaldo semanal guardado en tu Drive'); }); return ctx; });
   }
   raiz.iniciarApp = iniciarApp;
 })(window);
@@ -657,7 +656,7 @@ window.crearClienteSupabase = function (cfg) {
     const [gastos, sueldos, filas] = previos || await Promise.all([ctx.datos.listar('gastos', { obra_id: ctx.obra.id }), ctx.datos.listar('sueldos', { obra_id: ctx.obra.id }), ctx.datos.listar('reporte_conceptos', { obra_id: ctx.obra.id })]);
     const avances = cs.length ? await ctx.datos.listar('avances', { concepto_id: cs.map((c) => c.id) }) : [];
     const s = raiz.resumenSemana({ obra: ctx.obra.nombre, desde, hasta, etiqueta: `${fechaCorta(desde)} – ${fechaCorta(hasta)}`, conceptos: cs, gastos, sueldos, avances, alertas: filas.filter((f) => f.alerta) });
-    if (cerrable && !s.movimientos) return null; // semana sin movimientos: no estorba en Inicio
+    if (!s.movimientos) return null; // semana sin movimientos: no estorba
     const t = h('div', { class: 'c semana' },
       h('div', { class: 'row' }, h('span', { class: 'lbl' }, '📋 Semana pasada'), h('span', { class: 'mu' }, `${Number(desde.slice(8))}–${fechaCorta(hasta).replace(/^\D+/, '')}`)),
       h('div', { class: 'grid2', style: 'margin-top:8px' },
@@ -684,7 +683,7 @@ window.crearClienteSupabase = function (cfg) {
       semanal, caja,
       h('div', { class: 'grid2' },
         h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Presupuesto'), h('div', { class: 'b', style: 'font-size:18px' }, dinero(r.presupuesto))),
-        h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Pagado'), h('div', { class: 'b', style: 'font-size:18px' }, dinero(r.pagado)))),
+        h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Por pagar'), h('div', { class: 'b' + (r.comprometido ? ' nar' : ''), style: 'font-size:18px' }, dinero(r.comprometido)))), // lo pagado ya sale en la Caja
       h('div', { class: 'c' },
         h('div', { class: 'row' }, h('span', { class: 'lbl' }, 'Avance físico'), h('span', { class: 'b verde' }, pct(r.avance))), barra(r.avance, 'g'),
         h('div', { class: 'row', style: 'margin-top:10px' }, h('span', { class: 'lbl' }, 'Gastado'), h('span', { class: 'b ' + (r.gastado > r.avance ? 'rojo' : 'nar') }, pct(r.gastado))), barra(r.gastado, r.gastado > r.avance ? 'r' : '')),
@@ -903,7 +902,7 @@ window.crearClienteSupabase = function (cfg) {
         g.estado === 'pagado' ? h('span', { class: 'tag p' }, 'Pagado')
           : h('button', { class: 'tag c2', style: 'border:0', title: 'Marcar como pagado', onclick: async () => { await ctx.datos.cambiar('gastos', g.id, { estado: 'pagado' }); ctx.aviso('Marcado como pagado'); ctx.recargar(); } }, 'Comprometido')));
     return { titulo: 'Gastos', contenido: [
-      h('div', { class: 'grid2' }, h('button', { class: 'btn', onclick: () => ctx.ir('gasto_nuevo') }, '+ Nuevo gasto'), h('button', { class: 'btn o2', onclick: () => ctx.dictar() }, '🎤 Dictar gasto')),
+      h('button', { class: 'btn', onclick: () => ctx.ir('gasto_nuevo') }, '+ Nuevo gasto'), // dictar: botón 🎤 fijo arriba del +
       h('div', { class: 'tabs' }, tab('todos', 'Todos'), tab('comprometido', 'Comprometido'), tab('pagado', 'Pagado')),
       h('div', { class: 'grid2' }, h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Comprometido'), h('div', { class: 'b nar' }, dinero(suma('comprometido')))),
         h('div', { class: 'c' }, h('div', { class: 'mu' }, 'Pagado'), h('div', { class: 'b verde' }, dinero(suma('pagado'))))),
@@ -1006,7 +1005,7 @@ window.crearClienteSupabase = function (cfg) {
       r.alertas.length ? h('div', { class: 'c alerta' }, h('div', { class: 'b rojo' }, '● Gastado supera avance'),
         h('div', { class: 'mu' }, r.alertas.map((f) => `${nombreConcepto(f)}: +${Math.round(Number(f.pct_gastado) - Number(f.pct_avance || 0))} puntos`).join(' · '))) : null,
       semanal,
-      h('div', { class: 'mu' }, 'Gastado = comprometido + pagado (gastos y sueldos). Lo que no tiene concepto cuenta en el total de la obra. PDF y Excel: siguiente etapa.')] };
+      h('div', { class: 'mu' }, 'Gastado = comprometido + pagado (gastos y sueldos). Lo que no tiene concepto cuenta en el total de la obra.')] };
   };
 })(window);
 </script>
@@ -1713,12 +1712,13 @@ window.crearClienteSupabase = function (cfg) {
   raiz.botonRespaldo = botonRespaldo;
   raiz.PANTALLAS.mas = async (ctx) => {
     const obras = await ctx.datos.listar('obras', {}, ['creado']);
+    const avisoActivo = raiz.AVISO ? await raiz.AVISO.activo().catch(() => false) : false;
     const ir = (txt, v, p, desc) => h('button', { class: 'c', style: 'text-align:left;border:0', onclick: () => ctx.ir(v, p) }, h('div', { class: 'lbl' }, txt), desc ? h('div', { class: 'mu' }, desc) : null);
     return { titulo: 'Más', contenido: [
       ir('💵 Caja de la obra', 'caja', null, 'Lo que te paga el cliente vs lo que has pagado'),
       ir('Reporte por concepto', 'reporte', null, 'Presupuesto, comprometido, pagado, % gastado vs % avance'),
       ir('Sueldos', 'sueldos', null, 'Por semana y destajo a precio alzado'), ir('Bitácora', 'bitacora', null, 'Lo hecho y lo gastado por día, semana, mes y año'),
-      ir('Calendario', 'calendario', null, 'Programa con línea base y atrasos'), ir('Fotos', 'fotos', null, 'Enlaces a tu Google Drive'), ir('Estimaciones', 'estimaciones', null, 'Periodo, importe y acumulado'),
+      ir('Calendario', 'calendario', null, 'Programa con línea base y atrasos'), ir('Fotos', 'fotos', null, 'De la obra y tickets, guardadas en tu Drive'), ir('Estimaciones', 'estimaciones', null, 'Periodo, importe y acumulado'),
       h('div', { class: 'cap' }, 'Obra'),
       ir('Datos de la obra', 'obra', null, ctx.obra.nombre),
       obras.length > 1 ? h('label', { class: 'form' }, h('span', { class: 'lbl' }, 'Cambiar de obra'), h('select', { onchange: (e) => { ctx.usarObra(obras.find((o) => o.id === e.target.value)); ctx.ir('inicio'); } },
@@ -1730,10 +1730,10 @@ window.crearClienteSupabase = function (cfg) {
         botonRespaldo(ctx)) : null,
       h('div', { class: 'cap' }, 'Aviso del lunes'),
       raiz.AVISO ? h('div', { class: 'c form' },
-        h('div', { class: 'mu', id: 'estadoAviso' }, (await raiz.AVISO.activo().catch(() => false)) ? '✅ Activo en este celular: cada lunes 8 am te llega "Resumen de la semana listo".' : 'Cada lunes 8 am te llega un aviso al celular con el resumen de la semana.'),
-        h('button', { class: 'btn', id: 'btnAviso', onclick: async (e) => { const b = e.currentTarget; b.disabled = true;
+        h('div', { class: 'mu', id: 'estadoAviso' }, avisoActivo ? '✅ Activo en este celular: cada lunes 8 am te llega "Resumen de la semana listo".' : 'Cada lunes 8 am te llega un aviso al celular con el resumen de la semana.'),
+        avisoActivo ? null : h('button', { class: 'btn', id: 'btnAviso', onclick: async (e) => { const b = e.currentTarget; b.disabled = true;
           try { await raiz.AVISO.activar(ctx.datos); ctx.aviso('Aviso del lunes activado'); ctx.recargar(); } catch (err) { ctx.aviso('No se pudo activar: ' + err.message); b.disabled = false; } } }, 'Activar aviso del lunes'),
-        h('button', { class: 'btn lig', id: 'btnProbarAviso', onclick: async (e) => { const b = e.currentTarget; b.disabled = true;
+        !avisoActivo ? null : h('button', { class: 'btn lig', id: 'btnProbarAviso', onclick: async (e) => { const b = e.currentTarget; b.disabled = true;
           try { await raiz.AVISO.probar(); ctx.aviso('Aviso enviado: debe llegarte en segundos'); } catch (err) { ctx.aviso('No se pudo: ' + err.message); } b.disabled = false; } }, 'Probar aviso')) : null,
       h('div', { class: 'cap' }, 'Seguridad'),
       h('label', { class: 'c row', style: 'gap:10px' }, h('span', {}, h('div', { class: 'lbl' }, 'Pedir huella o PIN'), h('div', { class: 'mu' }, 'Al abrir después de 15 min sin usarla. Apagado: abre directo.')),
@@ -1746,7 +1746,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="1.4.0-20261128013656">
+</head><body data-version="1.4.1-20261128081023">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <div id="portada"><img src="iconos/portada.jpg" alt="IVSa Proyecto &amp; Construcción"></div>
 <section id="acceso">
