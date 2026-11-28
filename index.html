@@ -1,10 +1,10 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Control de obra</title>
-<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#1f2a36">
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#1bdbff">
 <link rel="icon" href="iconos/icono-192.png"><link rel="apple-touch-icon" href="iconos/apple-touch-icon.png">
 <style>/* id: ui.estilos · tipo: componente_comun · módulo: ui · deps: ninguna · estilo de las maquetas aprobadas */
-:root { --fondo:#f4f4f2; --texto:#1c1c1e; --borde:#cccccc; --oscuro:#1f2a36; --acento:#e8891c; --acento-txt:#a85f0c;
+:root { --ivsa:#1bdbff; --ivsa-txt:#0f2c3f; --fondo:#f4f4f2; --texto:#1c1c1e; --borde:#cccccc; --oscuro:#1f2a36; --acento:#e8891c; --acento-txt:#a85f0c;
   --verde:#2e9e5b; --verde-txt:#1d7a43; --rojo:#d93a3a; --rojo-txt:#c02a2a; --tenue:#6b6b6b; --gris:#e7e7e3; --blanco:#ffffff; }
 * { box-sizing:border-box } body { margin:0; font:16px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif; background:var(--fondo); color:var(--texto); }
 input, button, select { font:inherit; color:inherit; }
@@ -17,7 +17,7 @@ button { cursor:pointer; }
 #portada img { width:100%; max-width:600px; -webkit-mask-image:linear-gradient(transparent, #000 14%, #000 86%, transparent); mask-image:linear-gradient(transparent, #000 14%, #000 86%, transparent); }
 #portada.fuera { opacity:0; pointer-events:none; }
 .fab.mic svg { width:26px; height:26px; }
-.acceso-cab { background:var(--oscuro); color:#fff; padding:90px 24px 36px; text-align:center; }
+.acceso-cab { background:var(--ivsa); color:var(--ivsa-txt); padding:90px 24px 36px; text-align:center; }
 .acceso-cab h1 { font-size:26px; margin:10px 0 0; } .acceso-cab img { width:64px; height:64px; border-radius:14px; }
 .acceso { max-width:420px; margin:0 auto; padding:24px; display:grid; gap:14px; }
 .acceso div { display:grid; gap:12px; }
@@ -30,10 +30,10 @@ button { cursor:pointer; }
 
 /* Estructura de la app */
 .app { display:flex; flex-direction:column; min-height:100vh; max-width:560px; margin:0 auto; background:var(--fondo); }
-.top { background:var(--oscuro); color:#fff; padding:18px 16px 14px; padding-top:max(18px, env(safe-area-inset-top)); }
-.top small { opacity:.7; font-size:12px; } .top h1 { font-size:22px; margin:2px 0 0; }
+.top { background:var(--ivsa); color:var(--ivsa-txt); padding:18px 16px 14px; padding-top:max(18px, env(safe-area-inset-top)); }
+.top small { opacity:.75; font-size:12px; } .obra-sel { background:#ffffff59; color:inherit; border:0; border-radius:14px; padding:4px 10px; font-size:13px; font-weight:600; } .top h1 { font-size:22px; margin:2px 0 0; }
 .top { position:relative; overflow:hidden; } .top > :not(.grua) { position:relative; }
-.top .grua { position:absolute; right:0; bottom:0; height:100%; width:62%; color:#fff; opacity:.24; pointer-events:none;
+.top .grua { position:absolute; right:0; bottom:0; height:100%; width:62%; color:#fff; opacity:.6; pointer-events:none;
   -webkit-mask-image:linear-gradient(to right, transparent, #000 35%); mask-image:linear-gradient(to right, transparent, #000 35%); }
 .top .grua .carga { animation:subeViga 7s ease-in-out infinite; }
 @keyframes subeViga { 0% { transform:translateY(0); } 60% { transform:translateY(-58px); } 75% { transform:translateY(-58px); } 100% { transform:translateY(0); } }
@@ -95,7 +95,7 @@ window.CONFIG = {
   minutosBloqueoInactividad: 15,   // 15 min sin usar la app (abierta o cerrada): pide huella o PIN
 };
 </script>
-<script data-version="1.4.1-20261128081023">// id: core.vigia · tipo: proceso_base · módulo: core · deps: core.configuracion
+<script data-version="1.4.2-20261128172208">// id: core.vigia · tipo: proceso_base · módulo: core · deps: core.configuracion
 // Si la app no arranca: muestra qué pasó con botón "Reparar" (borra caché y recarga) y avisa el error al servidor
 // (tabla errores_app) para poder arreglarlo sin pedirle nada al dueño. Se repara sola 1 vez por versión.
 (function (raiz) {
@@ -572,6 +572,16 @@ window.crearClienteSupabase = function (cfg) {
       ctx.obra = obras.find((o) => o.id === guardada) || obras[obras.length - 1] || null;
       return obras;
     }
+    // Lista de obras al tocar el nombre de la obra arriba: cambiar de obra o crear otra.
+    async function abrirObras() {
+      const obras = await datos.listar('obras', {}, ['creado']).catch(() => []);
+      const cerrar = () => capa.remove();
+      const capa = h('div', { class: 'capa-voz', role: 'dialog', 'aria-label': 'Elegir obra', onclick: (e) => { if (e.target === capa) cerrar(); } },
+        h('div', { class: 'c form hoja-obras' }, h('div', { class: 'lbl' }, '¿En qué obra trabajas?'),
+          obras.map((o) => h('button', { class: 'btn ' + (o.id === ctx.obra.id ? '' : 'o2'), onclick: () => { cerrar(); ctx.usarObra(o); ir(MENU.some((m) => m[0] === vista) ? vista : 'inicio'); aviso('Ahora en: ' + o.nombre); } }, (o.id === ctx.obra.id ? '✓ ' : '') + o.nombre)),
+          h('button', { class: 'btn lig', onclick: () => { cerrar(); ir('obra', { nueva: true }); } }, '+ Nueva obra')));
+      document.body.append(capa);
+    }
     ctx.usarObra = (o) => { ctx.obra = o; ctx.olvidar(); try { localStorage.setItem('obraActiva', o.id); } catch (e) { /* sin almacenamiento */ } };
 
     async function ir(v, p) {
@@ -585,7 +595,7 @@ window.crearClienteSupabase = function (cfg) {
       cuerpo.replaceChildren(h('p', { class: 'vacio' }, 'Cargando…'));
       try {
         const r = await pantalla(ctx, params);
-        top.replaceChildren(...[grua, h('small', {}, r.sub || (ctx.obra ? ctx.obra.nombre : '')), h('h1', {}, r.titulo)].filter(Boolean));
+        top.replaceChildren(...[grua, ctx.obra ? h('button', { class: 'obra-sel', 'aria-label': 'Cambiar de obra', onclick: abrirObras }, ctx.obra.nombre + ' ▾') : null, h('h1', {}, r.titulo), r.sub ? h('small', {}, r.sub) : null].filter(Boolean));
         cuerpo.replaceChildren(...[].concat(r.contenido).flat(Infinity).filter(Boolean));
         document.dispatchEvent(new CustomEvent('pantalla', { detail: vista }));
       } catch (e) {
@@ -812,6 +822,41 @@ window.crearClienteSupabase = function (cfg) {
   const REGLAS_TIPO = [[/flete|acarreo|transporte/, /flete/i], [/asesor|consultor|ingeniero|calculo/, /asesor/i], [/renta|alquiler|maquinaria|revolvedora|andamio|equipo/, /equipo/i], [/subcontrat|contratista/, /subcontrat/i], [/compr|material|ferreteri|tlapaleri|cemento|varilla|block|arena|grava/, /compra/i]];
   const PALABRAS_VACIAS = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'en', 'para', 'por', 'con', 'y', 'un', 'una', 'a', 'al', 'que', 'se', 'mi']);
 
+  // Cómo suena: el dictado escribe "Cali" por "KALLI", "Kaly", etc.
+  const sonido = (w) => sinAcentos(w.toLowerCase()).replace(/qu/g, 'c').replace(/k/g, 'c').replace(/z/g, 's').replace(/y/g, 'i').replace(/v/g, 'b').replace(/h/g, '').replace(/(.)\1+/g, '$1');
+  const CONECTORES = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'obra', 'obras', 'en', 'para', 'a', 'al']);
+  // Busca el nombre de una obra en lo dicho. Devuelve la obra y el pedazo de texto a quitar ("para la obra de locales de Cali").
+  function buscarObra(original, obras) {
+    const pals = original.split(/\s+/).filter(Boolean), limpia = (w) => w.replace(/[^\wáéíóúñü]/gi, '');
+    let mejor = null;
+    for (const o of obras || []) {
+      const nom = sinAcentos(String(o.nombre || '').toLowerCase()).split(/[^a-z0-9]+/).filter((w) => w && !CONECTORES.has(w)).map(sonido);
+      if (!nom.length) continue;
+      for (let i = 0; i < pals.length; i++) {
+        // Junta las palabras siguientes saltando conectores hasta tener tantas como el nombre.
+        const vistos = []; let j = i;
+        for (; j < pals.length && vistos.length < nom.length; j++) { const w = sinAcentos(limpia(pals[j]).toLowerCase()); if (!w) continue; if (CONECTORES.has(w) && vistos.length) continue; vistos.push(sonido(w)); }
+        if (vistos.length === nom.length && vistos.every((w, k) => w === nom[k] || (w.length >= 4 && nom[k].length >= 4 && (w.startsWith(nom[k].slice(0, 4)) || nom[k].startsWith(w.slice(0, 4)))))) {
+          let ini = i; while (ini > 0 && CONECTORES.has(sinAcentos(limpia(pals[ini - 1]).toLowerCase()))) ini--;
+          const cand = { obra: o, quitar: pals.slice(ini, j).join(' '), largo: nom.length };
+          if (!mejor || cand.largo > mejor.largo) mejor = cand;
+          break;
+        }
+      }
+    }
+    if (mejor) return mejor;
+    // Segunda vuelta: solo la palabra que distingue a la obra ("en la obra Kaly"), si va después de "obra", "para" o "en".
+    const toks = (o) => sinAcentos(String(o.nombre || '').toLowerCase()).split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !CONECTORES.has(w)).map(sonido);
+    const todas = (obras || []).map(toks);
+    for (let i = 1; i < pals.length; i++) {
+      const w = sonido(sinAcentos(limpia(pals[i]).toLowerCase())), antes = sinAcentos(limpia(pals[i - 1]).toLowerCase());
+      if (w.length < 4 || !CONECTORES.has(antes)) continue;
+      const hits = (obras || []).filter((o, k) => todas[k].includes(w) && todas.filter((t) => t.includes(w)).length === 1);
+      if (hits.length === 1) { let ini = i; while (ini > 0 && CONECTORES.has(sinAcentos(limpia(pals[ini - 1]).toLowerCase()))) ini--; return { obra: hits[0], quitar: pals.slice(ini, i + 1).join(' '), largo: 1 }; }
+    }
+    return null;
+  }
+
   function interpretarDictado(texto, contexto) {
     const c = contexto || {}, original = String(texto || '').trim();
     const t = sinAcentos(original.toLowerCase());
@@ -841,19 +886,24 @@ window.crearClienteSupabase = function (cfg) {
       if (pts > mejor) { mejor = pts; concepto_id = k.id; }
     }
 
-    // Descripción: lo dicho sin el verbo inicial, sin el monto ni las palabras de estado/fecha.
+    // Obra mencionada ("para locales de Cali" → Locales KALLI).
+    const enObra = buscarObra(original, c.obras);
+
+    // Descripción: solo lo que se compró (sin "agrega", sin el monto, sin la obra, sin estado ni fecha).
     let nota = original;
+    if (enObra) nota = nota.replace(enObra.quitar, ' ');
     if (montoPieza) {
       const esc = montoPieza.txt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+');
       const conAcentos = esc.replace(/a/g, '[aá]').replace(/e/g, '[eé]').replace(/i/g, '[ií]').replace(/o/g, '[oó]').replace(/u/g, '[uú]');
       nota = nota.replace(new RegExp('\\$?\\s*' + conAcentos + '(\\s*(pesos?|varos))?', 'i'), ' ');
     }
-    nota = nota.replace(/^\s*(hoy |ayer |antier )?(compr[eé]|pagu[eé]|gast[eé]|se compr[oó]|se pag[oó]|compramos|pagamos)(?![a-záéíóúñ])/i, '')
-      .replace(/\b(a cr[eé]dito|por pagar|pendiente|ayer|antier|hoy)\b/gi, '').replace(/\s*,\s*(,\s*)*/g, ', ').replace(/\s{2,}/g, ' ').replace(/^[\s,.]+|[\s,.]+$/g, '');
+    nota = nota.replace(/^\s*(hoy |ayer |antier )?(compr[eé]|pagu[eé]|gast[eé]|se compr[oó]|se pag[oó]|compramos|pagamos|agrega(r|le)?|a[nñ]ade|registra(r)?|anota(r)?|apunta(r)?|pon(er|le)?|mete(r|le)?|carga(r|le)?|suma(r|le)?)(?![a-záéíóúñ])(\s+(un|una)\s+gasto)?/i, '')
+      .replace(/\b(a cr[eé]dito|por pagar|pendiente|ayer|antier|hoy)\b/gi, '').replace(/\s*,\s*(,\s*)*/g, ', ').replace(/\s{2,}/g, ' ').replace(/^[\s,.]+|[\s,.]+$/g, '')
+      .replace(/^(de|del|en|por|para)\s+/i, '').replace(/\s+(de|del|en|para|por|y)$/i, '');
     if (prov) nota = nota.replace(new RegExp('\\b(en|con el proveedor|proveedor)\\s+' + prov[1].trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/e/g, '[eé]').replace(/i/g, '[ií]').replace(/a/g, '[aá]'), 'i'), '').replace(/^[\s,.]+|[\s,.]+$/g, '').replace(/\s{2,}/g, ' ');
     nota = nota ? nota[0].toUpperCase() + nota.slice(1) : null;
 
-    return { monto, estado, fecha, tipo_id, proveedor, concepto_id, nota, texto: original };
+    return { monto, estado, fecha, tipo_id, proveedor, concepto_id, nota, obra_id: enObra ? enObra.obra.id : null, obra: enObra ? enObra.obra.nombre : null, texto: original };
   }
   if (typeof module !== 'undefined') module.exports = { interpretarDictado, leerNumeros }; else raiz.interpretarDictado = interpretarDictado;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -910,8 +960,12 @@ window.crearClienteSupabase = function (cfg) {
   };
 
   raiz.PANTALLAS.gasto_nuevo = async (ctx, p) => {
-    const [cs, tipos, historial] = await Promise.all([ctx.conceptos(), ctx.listas('tipo_gasto'), ctx.datos.listar('gastos', { obra_id: ctx.obra.id })]);
-    const dic = p && p.dictado && raiz.interpretarDictado ? raiz.interpretarDictado(p.dictado, { conceptos: cs, tipos, hoy: hoy() }) : null;
+    const [cs, tipos, historial, obras] = await Promise.all([ctx.conceptos(), ctx.listas('tipo_gasto'), ctx.datos.listar('gastos', { obra_id: ctx.obra.id }), ctx.datos.listar('obras', {})]);
+    const dic = p && p.dictado && raiz.interpretarDictado ? raiz.interpretarDictado(p.dictado, { conceptos: cs, tipos, obras, hoy: hoy() }) : null;
+    // Si dictaste otra obra, el gasto va a esa obra (sus conceptos son otros: se deja sin concepto).
+    const otraObra = dic && dic.obra_id && dic.obra_id !== ctx.obra.id ? obras.find((o) => o.id === dic.obra_id) : null;
+    if (otraObra) dic.concepto_id = null;
+    const obraDestino = otraObra || ctx.obra;
     let tipo = (dic && dic.tipo_id) || (tipos[0] ? tipos[0].id : null), estado = (dic && dic.estado) || 'pagado';
     const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Tipo' }, tipos.map((t) => h('button', { type: 'button', class: t.id === tipo ? 'on' : '', onclick: (e) => { tipo = t.id; chips.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === e.currentTarget)); } }, t.valor)));
     const est = h('div', { class: 'tabs' }, ['comprometido', 'pagado'].map((x) => h('button', { type: 'button', class: x === estado ? 'on' : '', onclick: (e) => { estado = x; est.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === e.currentTarget)); } }, x === 'pagado' ? 'Pagado' : 'Comprometido')));
@@ -927,13 +981,13 @@ window.crearClienteSupabase = function (cfg) {
       ev.preventDefault(); const d = new FormData(form); const monto = num(d.get('monto'));
       if (!(monto > 0)) { msg.textContent = 'Escribe un monto mayor a 0'; return; }
       try {
-        await ctx.datos.crear('gastos', { obra_id: ctx.obra.id, tipo_id: tipo, concepto_id: d.get('concepto_id') || null, fecha: d.get('fecha') || hoy(), monto, estado,
+        await ctx.datos.crear('gastos', { obra_id: obraDestino.id, tipo_id: tipo, concepto_id: d.get('concepto_id') || null, fecha: d.get('fecha') || hoy(), monto, estado,
           nota: d.get('nota').trim() || null, proveedor: d.get('proveedor').trim() || null, comprobante: d.get('comprobante').trim() || null });
-        ctx.aviso('Gasto guardado'); ctx.ir('gastos');
+        ctx.aviso(otraObra ? 'Gasto guardado en ' + otraObra.nombre : 'Gasto guardado'); ctx.ir('gastos');
       } catch (e) { msg.textContent = 'No se guardó: ' + e.message; }
     } },
       dic ? h('div', { class: 'c', style: 'background:#fff7ec' }, h('div', { class: 'mu' }, 'Escuché:'), h('div', { class: 'b' }, '«' + dic.texto + '»'),
-        h('div', { class: 'mu' }, dic.monto ? 'Revisa y toca Guardar.' : 'No escuché el monto: escríbelo.'), h('button', { type: 'button', class: 'btn lig', onclick: () => ctx.dictar() }, '🎤 Repetir')) : null,
+        h('div', { class: 'mu' }, dic.monto ? 'Revisa y toca Guardar.' : 'No escuché el monto: escríbelo.'), h('div', { class: 'b' + (otraObra ? ' nar' : ''), id: 'obraDictada' }, 'Obra: ' + obraDestino.nombre), h('button', { type: 'button', class: 'btn lig', onclick: () => ctx.dictar() }, '🎤 Repetir')) : null,
       h('label', {}, 'Monto', h('input', { name: 'monto', type: 'number', step: '0.01', min: '0', inputMode: 'decimal', required: true, value: dic && dic.monto ? String(dic.monto) : '', style: 'font-size:22px;font-weight:700' })),
       h('label', {}, 'Descripción', h('input', { name: 'nota', placeholder: 'Ej. Cemento 120 bultos', value: (dic && dic.nota) || '' })),
       h('div', { class: 'lbl' }, 'Tipo'), chips,
@@ -1746,7 +1800,7 @@ window.crearClienteSupabase = function (cfg) {
   };
 })(window);
 </script>
-</head><body data-version="1.4.1-20261128081023">
+</head><body data-version="1.4.2-20261128172208">
 <!-- id: acceso.pantalla · tipo: pantalla · módulo: acceso · deps: acceso.reglas, core.app -->
 <div id="portada"><img src="iconos/portada.jpg" alt="IVSa Proyecto &amp; Construcción"></div>
 <section id="acceso">
